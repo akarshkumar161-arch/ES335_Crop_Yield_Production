@@ -1,0 +1,247 @@
+{
+  "direct_ablation_val2021": [
+    {
+      "features": "weather",
+      "model": "ridge",
+      "rmse": 35.17,
+      "mae": 26.93,
+      "r2": 0.15,
+      "gain_pct": -47.6
+    },
+    {
+      "features": "weather",
+      "model": "rf",
+      "rmse": 30.78,
+      "mae": 24.36,
+      "r2": 0.35,
+      "gain_pct": -29.2
+    },
+    {
+      "features": "weather",
+      "model": "hgb",
+      "rmse": 30.23,
+      "mae": 23.21,
+      "r2": 0.37,
+      "gain_pct": -26.9
+    },
+    {
+      "features": "weather+geo",
+      "model": "ridge",
+      "rmse": 36.41,
+      "mae": 28.91,
+      "r2": 0.09,
+      "gain_pct": -52.8
+    },
+    {
+      "features": "weather+geo",
+      "model": "rf",
+      "rmse": 27.26,
+      "mae": 20.99,
+      "r2": 0.49,
+      "gain_pct": -14.4
+    },
+    {
+      "features": "weather+geo",
+      "model": "hgb",
+      "rmse": 26.59,
+      "mae": 21.35,
+      "r2": 0.51,
+      "gain_pct": -11.6
+    },
+    {
+      "features": "weather+geo+soil",
+      "model": "ridge",
+      "rmse": 33.94,
+      "mae": 25.72,
+      "r2": 0.21,
+      "gain_pct": -42.4
+    },
+    {
+      "features": "weather+geo+soil",
+      "model": "rf",
+      "rmse": 25.68,
+      "mae": 19.71,
+      "r2": 0.55,
+      "gain_pct": -7.8
+    },
+    {
+      "features": "weather+geo+soil",
+      "model": "hgb",
+      "rmse": 25.61,
+      "mae": 20.07,
+      "r2": 0.55,
+      "gain_pct": -7.5
+    }
+  ],
+  "settingA_anomaly_val2021": [
+    {
+      "features": "weather",
+      "model": "ridge",
+      "rmse": 21.22,
+      "mae": 15.92,
+      "r2": 0.69,
+      "gain_pct": 10.9
+    },
+    {
+      "features": "weather",
+      "model": "rf",
+      "rmse": 20.66,
+      "mae": 15.71,
+      "r2": 0.71,
+      "gain_pct": 13.3
+    },
+    {
+      "features": "weather",
+      "model": "hgb",
+      "rmse": 20.4,
+      "mae": 15.39,
+      "r2": 0.71,
+      "gain_pct": 14.4
+    },
+    {
+      "features": "weather+geo",
+      "model": "ridge",
+      "rmse": 21.22,
+      "mae": 15.92,
+      "r2": 0.69,
+      "gain_pct": 10.9
+    },
+    {
+      "features": "weather+geo",
+      "model": "rf",
+      "rmse": 20.45,
+      "mae": 15.46,
+      "r2": 0.71,
+      "gain_pct": 14.2
+    },
+    {
+      "features": "weather+geo",
+      "model": "hgb",
+      "rmse": 20.47,
+      "mae": 15.45,
+      "r2": 0.71,
+      "gain_pct": 14.1
+    },
+    {
+      "features": "weather+geo+soil",
+      "model": "ridge",
+      "rmse": 21.22,
+      "mae": 15.92,
+      "r2": 0.69,
+      "gain_pct": 10.9
+    },
+    {
+      "features": "weather+geo+soil",
+      "model": "rf",
+      "rmse": 20.48,
+      "mae": 15.48,
+      "r2": 0.71,
+      "gain_pct": 14.0
+    },
+    {
+      "features": "weather+geo+soil",
+      "model": "hgb",
+      "rmse": 20.38,
+      "mae": 15.42,
+      "r2": 0.71,
+      "gain_pct": 14.5
+    }
+  ],
+  "settingB_leave_states_out": [
+    {
+      "features": "weather",
+      "model": "rf",
+      "rmse": 29.18,
+      "mae": 21.97,
+      "r2": 0.35,
+      "gain_pct": 20.0
+    },
+    {
+      "features": "weather",
+      "model": "hgb",
+      "rmse": 29.19,
+      "mae": 21.88,
+      "r2": 0.35,
+      "gain_pct": 20.0
+    },
+    {
+      "features": "weather+geo",
+      "model": "rf",
+      "rmse": 28.89,
+      "mae": 21.47,
+      "r2": 0.37,
+      "gain_pct": 20.8
+    },
+    {
+      "features": "weather+geo",
+      "model": "hgb",
+      "rmse": 28.56,
+      "mae": 21.31,
+      "r2": 0.38,
+      "gain_pct": 21.7
+    },
+    {
+      "features": "weather+geo+soil",
+      "model": "rf",
+      "rmse": 29.58,
+      "mae": 21.87,
+      "r2": 0.33,
+      "gain_pct": 18.9
+    },
+    {
+      "features": "weather+geo+soil",
+      "model": "hgb",
+      "rmse": 29.51,
+      "mae": 21.87,
+      "r2": 0.34,
+      "gain_pct": 19.1
+    },
+    {
+      "features": "geo+soil (no weather)",
+      "model": "rf",
+      "rmse": 33.2,
+      "mae": 24.71,
+      "r2": 0.16,
+      "gain_pct": 9.0
+    },
+    {
+      "features": "geo+soil (no weather)",
+      "model": "hgb",
+      "rmse": 32.94,
+      "mae": 24.53,
+      "r2": 0.17,
+      "gain_pct": 9.7
+    }
+  ],
+  "final_test_2022": {
+    "model": "HistGradientBoosting (Tuned)",
+    "features": "weather+geo+soil",
+    "optimal_params": {
+      "learning_rate": 0.1,
+      "max_iter": 500,
+      "min_samples_leaf": 20
+    },
+    "rmse": 24.9,
+    "mae": 18.82,
+    "r2": 0.67,
+    "test_year": 2022,
+    "test_counties": 1515
+  },
+  "baselines_val2021": {
+    "county_mean": {
+      "rmse": 23.83,
+      "mae": 18.77,
+      "r2": 0.61
+    },
+    "prev_year": {
+      "rmse": 27.51,
+      "mae": 20.98,
+      "r2": 0.48
+    },
+    "training_mean_spatial": {
+      "rmse": 36.49,
+      "mae": 29.11,
+      "r2": -0.01
+    }
+  }
+}

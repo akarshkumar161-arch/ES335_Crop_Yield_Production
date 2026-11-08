@@ -1,0 +1,65 @@
+{
+  "baseline_yield": 172.5,
+  "features": {
+    "precip": {
+      "name": "Growing Season Rainfall",
+      "unit": "mm",
+      "min": 200,
+      "max": 1200,
+      "default": 620,
+      "optimal": 650,
+      "penalty_quadratic": -0.00018,
+      "description": "Total precipitation from April to September. Deficits below 450mm stress vegetative growth; extreme flooding above 900mm waterlogs roots."
+    },
+    "heat_days": {
+      "name": "Summer Heat Days (>30\u00b0C)",
+      "unit": "days",
+      "min": 0,
+      "max": 90,
+      "default": 22,
+      "threshold": 18,
+      "penalty_linear": -0.85,
+      "description": "Days exceeding 30\u00b0C in July & August. Above 18 days, thermal stress disrupts corn silking and kernel formation."
+    },
+    "tavg": {
+      "name": "Mean Summer Temperature",
+      "unit": "\u00b0C",
+      "min": 16.0,
+      "max": 32.0,
+      "default": 24.2,
+      "optimal": 23.5,
+      "penalty_quadratic": -1.1,
+      "description": "Average June\u2013August 24h temperature. Nighttime heat accelerates plant respiration and reduces carbohydrate storage."
+    },
+    "soc": {
+      "name": "Soil Organic Carbon (0-5cm)",
+      "unit": "g/kg",
+      "min": 5.0,
+      "max": 100.0,
+      "default": 35.0,
+      "reference": 30.0,
+      "gain_linear": 0.22,
+      "description": "Higher organic matter increases soil water-holding capacity, buffering crops against dry spells and drought."
+    },
+    "nitrogen": {
+      "name": "Soil Total Nitrogen (0-5cm)",
+      "unit": "g/kg",
+      "min": 0.5,
+      "max": 8.0,
+      "default": 2.5,
+      "reference": 2.0,
+      "gain_linear": 3.8,
+      "description": "Native soil nitrogen provides baseline nutrient supply for early canopy expansion before supplemental fertilizer uptake."
+    },
+    "ph": {
+      "name": "Soil pH (H2O)",
+      "unit": "pH",
+      "min": 4.5,
+      "max": 8.5,
+      "default": 6.5,
+      "optimal": 6.5,
+      "penalty_quadratic": -5.2,
+      "description": "Nutrient bioavailability peaks near pH 6.2\u20136.8. Acidic soils (<5.5) or strongly alkaline soils (>7.8) induce micronutrient toxicities or lockups."
+    }
+  }
+}
