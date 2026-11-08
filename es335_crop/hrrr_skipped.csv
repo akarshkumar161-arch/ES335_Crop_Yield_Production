@@ -1,0 +1,5 @@
+file,reason
+WRF-HRRR Computed Dataset/data/2018/NM/HRRR_35_NM_2018-07.csv,OSError('Consistency check failed: file should be of size 24055772 but has size 24176190 (HRRR_35_NM_2018-07.csv).\nThis is usually due to network iss
+WRF-HRRR Computed Dataset/data/2018/NM/HRRR_35_NM_2018-08.csv,OSError('Consistency check failed: file should be of size 24016432 but has size 24984029 (HRRR_35_NM_2018-08.csv).\nThis is usually due to network iss
+WRF-HRRR Computed Dataset/data/2018/NM/HRRR_35_NM_2018-09.csv,OSError('Consistency check failed: file should be of size 23209987 but has size 24870026 (HRRR_35_NM_2018-09.csv).\nThis is usually due to network iss
+WRF-HRRR Computed Dataset/data/2020/NV/HRRR_32_NV_2020-05.csv,OSError('Consistency check failed: file should be of size 24912926 but has size 36881245 (HRRR_32_NV_2020-05.csv).\nThis is usually due to network iss
