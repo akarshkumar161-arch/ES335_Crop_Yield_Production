@@ -62,7 +62,7 @@
         </div>
         <div class="meta-item">
           <span class="meta-label">Final 2022 Test Score</span>
-          <span class="meta-value">RMSE 24.90 bu/ac | R² 0.67</span>
+          <span class="meta-value">RMSE 24.90 bu/ac (county-mean baseline 25.48) | R² 0.67</span>
         </div>
       </div>
     </div>
@@ -167,15 +167,9 @@
               <td>Nitrogen (0-5cm, 5-15cm), SOC (0-5cm, 5-15cm), pH (0-5cm, 5-15cm)</td>
             </tr>
             <tr>
-              <td><strong>Cropland Mask</strong></td>
-              <td>USDA Cropland Data Layer (CDL)</td>
-              <td>30m land-cover raster</td>
-              <td>Used to filter out non-agricultural areas prior to county aggregation</td>
-            </tr>
-            <tr>
               <td><strong>Geography</strong></td>
-              <td>US Census TIGER &amp; SRTM</td>
-              <td>Vector &amp; 90m DEM</td>
+              <td>US Census TIGER</td>
+              <td>County boundaries</td>
               <td>County centroids (lat, lon), regional state FIPS codes</td>
             </tr>
           </tbody>
@@ -184,8 +178,9 @@
 
       <h3 class="sub-heading">Data Quality &amp; Cleaning Checks</h3>
       <ul style="margin-left: 1.5rem; color: var(--text-muted); margin-bottom: 1rem;">
-        <li><strong>Cropland Masking:</strong> Soil and weather raster pixels were strictly masked to cultivated cropland pixels using the USDA Cropland Data Layer to avoid diluting agricultural soil signatures with urban or forested pixels.</li>
-        <li><strong>Missing Data &amp; Boundary Handling:</strong> HRRR weather files with incomplete hourly timestamps were logged (<span class="inline-code">hrrr_skipped.csv</span>) and imputed using spatial neighbor medians.</li>
+        <li><strong>Soil aggregation:</strong> SoilGrids values are averaged to each county (see <span class="inline-code">notebooks/00_data_pipeline.ipynb</span>). Soil is therefore constant for a county across years. Elevation (SRTM), soil texture and cropland masking (USDA CDL) were in the proposal but are not part of this version.</li>
+        <li><strong>Missing weather files:</strong> Four HRRR files failed to download (logged in <span class="inline-code">hrrr_skipped.csv</span>, all New Mexico 2018). They were not imputed; New Mexico has no rows in the final model table.</li>
+        <li><strong>Dry western counties:</strong> About 70 county-years (mostly California, Washington, Idaho and Texas) have under 100 mm of April–September rain. These are real values from irrigated areas, not missing data, and are kept.</li>
         <li><strong>FIPS Normalization:</strong> County FIPS codes were standardized to 5-digit strings with leading zeros to prevent cross-dataset join corruption (e.g., Autauga County, AL: <span class="inline-code">01001</span>).</li>
       </ul>
     </section>
@@ -379,13 +374,13 @@
       <div class="callout warning">
         <h4>Key Empirical Finding on Direct Models</h4>
         <p>
-          In direct prediction, a simple 4-year historical county mean (\(\text{RMSE} = 23.83\)) beats all direct weather-only and weather+soil models (\(\text{RMSE} = 25.61\)). This proves that local agricultural infrastructure and historical soil conditions provide an overwhelmingly strong baseline signal that direct weather models struggle to replicate without local county anchors.
+          In direct prediction, a simple 4-year historical county mean (\(\text{RMSE} = 23.83\)) beats every direct model in 2021, including the best weather+geo+soil model (\(\text{RMSE} = 25.61\)). Yields are highly persistent within a county, and a model that does not know a county's history cannot fully recover that from weather, location and topsoil alone.
         </p>
       </div>
 
       <h3 class="sub-heading">Setting A: Anomaly Models (Known Counties with Weather Departures)</h3>
       <p>
-        When formulating models as <strong>County Mean + Weather Departure Correction</strong>, the machine learning models decisively outperform the baseline:
+        When formulating models as <strong>County Mean + Weather Departure Correction</strong>, every model beats the baseline, by 11–15% in RMSE:
       </p>
 
       <div class="table-responsive">
@@ -479,23 +474,23 @@
 
       <h3 class="sub-heading">Final 2022 Test Set Verification</h3>
       <p>
-        Following hyperparameter tuning on the 2021 validation set (optimal: <span class="inline-code">learning_rate=0.1, max_iter=500, min_samples_leaf=20</span>), we trained the model on 2017–2021 and evaluated on the untouched <strong>2022 test set (1,515 counties)</strong>:
+        Following hyperparameter tuning on the 2021 validation set (optimal: <span class="inline-code">learning_rate=0.1, max_iter=500, min_samples_leaf=20</span>), we trained the model on 2017–2021 and evaluated on the untouched <strong>2022 test set (1,515 counties)</strong>. The county-mean baseline (2017–2021 average) scores RMSE 25.48, MAE 18.97, R² 0.65 on the same counties, so the model's gain on the test year is small (2.3% lower RMSE):
       </p>
       <div class="stat-cards-grid">
         <div class="stat-card highlight">
           <div class="stat-num">24.90</div>
           <div class="stat-desc">Test RMSE (bu/ac)</div>
-          <div class="stat-sub">Held-out 2022 Data</div>
+          <div class="stat-sub">Baseline: 25.48</div>
         </div>
         <div class="stat-card highlight">
           <div class="stat-num">18.82</div>
           <div class="stat-desc">Test MAE (bu/ac)</div>
-          <div class="stat-sub">Held-out 2022 Data</div>
+          <div class="stat-sub">Baseline: 18.97</div>
         </div>
         <div class="stat-card highlight">
           <div class="stat-num">0.67</div>
           <div class="stat-desc">Test R² Score</div>
-          <div class="stat-sub">67% Variance Explained</div>
+          <div class="stat-sub">Baseline: 0.65</div>
         </div>
       </div>
     </section>
@@ -624,121 +619,108 @@
       <span class="section-tag">Interactive Deliverable 2</span>
       <h2 class="section-heading">Interactive What-If Yield Simulator</h2>
       <p>
-        Test how changes in climate stress and soil quality affect corn yield in real-time. This simulator runs client-side decision logic derived from our trained tree ensemble and linear ablations.
+        Enter your own season and soil values and see the yield predicted by a trained model. The model is a Ridge regression on six inputs and their squares (so it can learn curves such as "too little or too much rain"), trained on 2017–2021 and exported to <code>data/simulator_params.json</code>. The browser runs exactly the same formula. It uses no county history, so it is much less accurate than the county-level model on the map; treat it as showing how yield moves with weather and soil on average, not as a forecast for a particular farm.
       </p>
 
       <div class="interactive-container">
-        <!-- Preset Scenario Buttons -->
         <div style="margin-bottom: 1.25rem;">
           <span style="font-size: 0.8rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-right: 0.75rem;">Preset Scenarios:</span>
           <div class="preset-buttons" style="display: inline-flex;">
-            <button class="btn-preset" id="btn-preset-cornbelt">Optimal Corn Belt Year</button>
-            <button class="btn-preset" id="btn-preset-drought">Severe 2012-Style Drought</button>
-            <button class="btn-preset" id="btn-preset-highsoc">High SOC Drought Buffer</button>
-            <button class="btn-preset" id="btn-preset-acidic">Acidic / Degraded Soil</button>
+            <button class="btn-preset" id="btn-preset-typical">Typical county (all medians)</button>
+            <button class="btn-preset" id="btn-preset-cornbelt">Iowa / Illinois median</button>
+            <button class="btn-preset" id="btn-preset-hotdry">Hot &amp; dry season</button>
+            <button class="btn-preset" id="btn-preset-acidic">Acidic, low-carbon soil</button>
           </div>
         </div>
 
         <div class="simulator-layout">
-          <!-- Controls Panel -->
           <div class="controls-panel">
-            <!-- Precip Slider -->
             <div class="slider-group">
               <div class="slider-header">
-                <span class="slider-label">Growing Season Rainfall (Apr–Sep)</span>
-                <span class="slider-val-box" id="val-precip">620 mm</span>
+                <span class="slider-label" id="label-precip">Growing-season rainfall (Apr–Sep total)</span>
+                <span class="slider-val-box" id="val-precip">–</span>
               </div>
-              <input type="range" id="sim-precip" min="200" max="1200" step="10" value="620">
-              <div class="slider-hint">Optimal between 550–700mm. Drops below 400mm cause acute moisture deficits.</div>
+              <input type="range" id="sim-precip">
+              <div class="slider-hint">Total rainfall over the season.</div>
             </div>
-
-            <!-- Heat Days Slider -->
             <div class="slider-group">
               <div class="slider-header">
-                <span class="slider-label">Summer Heat Days (&gt;30°C in Jul–Aug)</span>
-                <span class="slider-val-box" id="val-heat">22 days</span>
+                <span class="slider-label" id="label-heat">Heat days, max temp &gt; 30 °C (Apr–Sep)</span>
+                <span class="slider-val-box" id="val-heat">–</span>
               </div>
-              <input type="range" id="sim-heat" min="0" max="90" step="1" value="22">
-              <div class="slider-hint">Days exceeding 30°C during corn pollination induce pollen sterility.</div>
+              <input type="range" id="sim-heat">
+              <div class="slider-hint">Number of days in the season with a daily maximum above 30 °C.</div>
             </div>
-
-            <!-- Mean Temp Slider -->
             <div class="slider-group">
               <div class="slider-header">
-                <span class="slider-label">Mean Summer Temperature</span>
-                <span class="slider-val-box" id="val-temp">24.2 °C</span>
+                <span class="slider-label" id="label-temp">Mean summer temperature (Jun–Aug)</span>
+                <span class="slider-val-box" id="val-temp">–</span>
               </div>
-              <input type="range" id="sim-temp" min="16.0" max="32.0" step="0.2" value="24.2">
-              <div class="slider-hint">High nighttime temperatures accelerate plant respiration and grain loss.</div>
+              <input type="range" id="sim-temp">
+              <div class="slider-hint">Average of the June, July and August mean temperatures.</div>
             </div>
-
-            <!-- Soil Organic Carbon Slider -->
             <div class="slider-group">
               <div class="slider-header">
-                <span class="slider-label">Soil Organic Carbon (0–5cm)</span>
-                <span class="slider-val-box" id="val-soc">35.0 g/kg</span>
+                <span class="slider-label" id="label-soc">Soil organic carbon (0–5 cm)</span>
+                <span class="slider-val-box" id="val-soc">–</span>
               </div>
-              <input type="range" id="sim-soc" min="5.0" max="100.0" step="1.0" value="35.0">
-              <div class="slider-hint">Higher organic matter expands soil available water capacity (AWC).</div>
+              <input type="range" id="sim-soc">
+              <div class="slider-hint">County average from SoilGrids; fixed for a county across years.</div>
             </div>
-
-            <!-- Soil Nitrogen Slider -->
             <div class="slider-group">
               <div class="slider-header">
-                <span class="slider-label">Native Soil Nitrogen (0–5cm)</span>
-                <span class="slider-val-box" id="val-nitrogen">2.5 g/kg</span>
+                <span class="slider-label" id="label-nitrogen">Soil total nitrogen (0–5 cm)</span>
+                <span class="slider-val-box" id="val-nitrogen">–</span>
               </div>
-              <input type="range" id="sim-nitrogen" min="0.5" max="8.0" step="0.1" value="2.5">
-              <div class="slider-hint">Native mineralizable nitrogen supports early vegetative canopy development.</div>
+              <input type="range" id="sim-nitrogen">
+              <div class="slider-hint">Native soil nitrogen from SoilGrids, not fertilizer applied.</div>
             </div>
-
-            <!-- Soil pH Slider -->
             <div class="slider-group">
               <div class="slider-header">
-                <span class="slider-label">Soil pH (H2O)</span>
-                <span class="slider-val-box" id="val-ph">6.5</span>
+                <span class="slider-label" id="label-ph">Soil pH (H2O, 0–5 cm)</span>
+                <span class="slider-val-box" id="val-ph">–</span>
               </div>
-              <input type="range" id="sim-ph" min="4.5" max="8.5" step="0.1" value="6.5">
-              <div class="slider-hint">Optimal between 6.2–6.8. Acidic soils (&lt;5.5) inhibit nutrient uptake.</div>
+              <input type="range" id="sim-ph">
+              <div class="slider-hint">County average topsoil pH from SoilGrids.</div>
             </div>
           </div>
 
-          <!-- Output Gauge Panel -->
           <div class="output-panel">
             <div class="yield-display-box">
-              <div style="font-size: 0.85rem; font-weight: 700; text-transform: uppercase; color: var(--text-light); letter-spacing: 0.05em;">Estimated Corn Yield</div>
-              <div class="yield-main-val" id="sim-output-yield">172.5</div>
+              <div style="font-size: 0.85rem; font-weight: 700; text-transform: uppercase; color: var(--text-light); letter-spacing: 0.05em;">Predicted Corn Yield</div>
+              <div class="yield-main-val" id="sim-output-yield">–</div>
               <div class="yield-unit">Bushels Per Acre</div>
-              <div class="yield-comparison badge-success" id="sim-output-comparison">+0.0 bu/ac vs National Baseline</div>
+              <div class="yield-comparison badge-success" id="sim-output-comparison">Loading model…</div>
             </div>
 
             <div class="yield-breakdown-list">
-              <div style="font-weight: 700; margin-bottom: 0.5rem; color: var(--text-main);">Feature Contribution Breakdown:</div>
+              <div style="font-weight: 700; margin-bottom: 0.5rem; color: var(--text-main);">Change from a typical county, by input:</div>
               <div class="breakdown-row" id="impact-rain">
-                <span>Rainfall Effect:</span>
-                <span class="breakdown-impact-pos">+0.0 bu/ac</span>
+                <span>Rainfall</span>
+                <span>+0.0 bu/ac</span>
               </div>
               <div class="breakdown-row" id="impact-heat">
-                <span>Heat Stress Penalty:</span>
-                <span class="breakdown-impact-neg">-0.0 bu/ac</span>
+                <span>Heat days</span>
+                <span>+0.0 bu/ac</span>
               </div>
               <div class="breakdown-row" id="impact-temp">
-                <span>Temperature Variance:</span>
-                <span class="breakdown-impact-neg">-0.0 bu/ac</span>
+                <span>Summer temperature</span>
+                <span>+0.0 bu/ac</span>
               </div>
               <div class="breakdown-row" id="impact-soc">
-                <span>SOC Moisture Buffer:</span>
-                <span class="breakdown-impact-pos">+0.0 bu/ac</span>
+                <span>Soil organic carbon</span>
+                <span>+0.0 bu/ac</span>
               </div>
               <div class="breakdown-row" id="impact-nitro">
-                <span>Native Nitrogen Supply:</span>
-                <span class="breakdown-impact-pos">+0.0 bu/ac</span>
+                <span>Soil nitrogen</span>
+                <span>+0.0 bu/ac</span>
               </div>
               <div class="breakdown-row" id="impact-ph">
-                <span>pH Bioavailability:</span>
-                <span class="breakdown-impact-pos">+0.0 bu/ac</span>
+                <span>Soil pH</span>
+                <span>+0.0 bu/ac</span>
               </div>
             </div>
+            <p class="slider-hint" id="sim-model-accuracy" style="margin-top: 0.75rem;"></p>
           </div>
         </div>
       </div>
@@ -812,13 +794,13 @@
       <div class="callout danger">
         <h4>Diagnostic Breakdown of Outlier States</h4>
         <p>
-          <strong>1. Irrigated vs. Rainfed Agriculture:</strong> In Western states like Washington (\(\text{RMSE} = 67.37\)), Idaho (\(\text{RMSE} = 64.58\)), and Colorado (\(\text{RMSE} = 65.75\)), nearly all corn is intensely irrigated with water diverted from mountain snowmelt (Columbia and Snake River basins). The model sees low summer rainfall in WRF-HRRR and penalizes the crop heavily, while in reality the crops receive pressurized center-pivot irrigation, yielding over 220 bu/ac.
+          <strong>1. Irrigated vs. Rainfed Agriculture:</strong> The largest errors are in dry western states where much of the corn is irrigated. When whole states are held out (Setting B), the weather+geo+soil HGB has RMSE 124.9 bu/ac in Washington, 85.3 in Idaho and 64.2 in Colorado. In the 2021 validation year, Colorado (48.4) and Texas (39.3) have the highest state RMSEs, against 16.1 in Iowa and 12.1 in Illinois. These counties get very little rain yet have high yields (Washington averaged 224 bu/ac in 2021); our likely explanation is irrigation, which the model has no feature for.
         </p>
         <p>
-          <strong>2. Elevation &amp; Topographic Complexity:</strong> In high-elevation counties (e.g., eastern Colorado at &gt;1,200m altitude), cool nighttime mountain air suppresses growing degree days, creating complex microclimates that coarse gridded reanalyses fail to capture.
+          <strong>2. Elevation (hypothesis, not tested):</strong> Elevation is not in our feature set. Colorado's high errors may partly reflect high-elevation conditions that county-average weather does not describe well; adding SRTM elevation would test this.
         </p>
         <p>
-          <strong>3. SoilGrids Depth Attenuation:</strong> In states with deep glacial Mollisols (Iowa, Illinois), root zones extend past 100cm depth. Relying solely on topsoil chemistry (0–5cm and 5–15cm) captures early seedling establishment but underestimates the deep subsoil moisture reserves that carry Midwest corn through mid-summer heat spells.
+          <strong>3. Topsoil only (hypothesis, not tested):</strong> In states with deep glacial Mollisols (Iowa, Illinois), root zones extend past 100cm depth. Relying solely on topsoil chemistry (0–5cm and 5–15cm) captures early seedling establishment but underestimates the deep subsoil moisture reserves that carry Midwest corn through mid-summer heat spells.
         </p>
       </div>
     </section>
@@ -874,7 +856,7 @@
       <ol style="margin-left: 1.5rem; color: var(--text-muted); line-height: 1.8; margin-bottom: 1.5rem;">
         <li><strong>Historical Baselines Dominate Direct Prediction:</strong> When county yield histories are available, historical averages (\(\text{RMSE} = 23.83\)) outshine direct weather models (\(\text{RMSE} = 25.61\)). Agricultural productivity possesses immense spatial persistence.</li>
         <li><strong>Anomaly Modeling Provides Strong Gains:</strong> Reframing the task as predicting weather-driven deviations from county normals achieved the best performance: \(\text{RMSE} = 20.38\) bu/ac, a <strong>14.5% error reduction</strong> over the historical county baseline with \(R^2 = 0.71\).</li>
-        <li><strong>Soil Chemistry Contributes Crucial Non-Linear Buffering:</strong> Adding SoilGrids properties (SOC, Nitrogen, pH) reduced direct model RMSE by ~1.6 bu/ac and proved especially vital in cross-state spatial transfer, where local county baselines cannot be known.</li>
+        <li><strong>Soil Adds Little Once Location Is Known:</strong> Adding SoilGrids properties (SOC, nitrogen, pH) to weather+geo lowered the direct HGB's 2021 RMSE by about 1.0 bu/ac (26.59 → 25.61). It gave no gain in the anomaly setting, and in leave-states-out validation it slightly hurt (28.56 → 29.51). Because soil is constant within a county, it mostly acts as another location signal.</li>
       </ol>
     </section>
 
@@ -896,8 +878,8 @@ cd ES335_Crop_Yield_Production
 python3 -m venv venv
 source venv/bin/activate
 
-# Install required dependencies
-pip install numpy pandas scikit-learn matplotlib seaborn jupyter</code></pre>
+# Install pinned dependencies (scikit-learn 1.6.1 reproduces the reported numbers exactly)
+pip install -r requirements.txt</code></pre>
 
       <h3 class="sub-heading">2. Dataset Access &amp; Structure</h3>
       <p>
@@ -909,7 +891,8 @@ pip install numpy pandas scikit-learn matplotlib seaborn jupyter</code></pre>
 ├── weather_county_month.csv       # WRF-HRRR monthly aggregated weather
 ├── ablation_val2021.csv           # Benchmark results on 2021 validation set
 ├── settingA_anomaly_val2021.csv   # Anomaly formulation metrics
-└── settingB_leave_states_out.csv  # Spatial GroupKFold CV results</code></pre>
+├── settingB_leave_states_out.csv  # Spatial GroupKFold CV results
+└── ridge_coefficients.csv         # Standardized Ridge coefficients (notebook 03)</code></pre>
 
       <h3 class="sub-heading">3. Running the Analysis Notebooks</h3>
       <pre class="code-block"><code># Launch Jupyter
@@ -920,10 +903,15 @@ jupyter notebook
 #    Executes the single final test on 2022 (RMSE: 24.90, R2: 0.67).
 
 # 2. Open notebooks/02_anomaly_and_spatial_cv.ipynb
-#    Executes Setting A (Anomaly departure models) and Setting B (Leave-states-out CV).</code></pre>
+#    Executes Setting A (Anomaly departure models) and Setting B (Leave-states-out CV).
+
+# 3. Open notebooks/03_figures_and_coefficients.ipynb
+#    Saves all report figures to figures/ and the Ridge coefficients table.
+
+# Notebooks run locally or on Colab; locally they read es335_crop/ automatically.</code></pre>
 
       <h3 class="sub-heading">4. Generating Web Artifacts &amp; Local Preview</h3>
-      <pre class="code-block"><code># Export web data JSON artifacts
+      <pre class="code-block"><code># Train the website models and export docs/data/*.json
 python scripts/export_web_data.py
 
 # Launch local HTTP server for GitHub Pages preview

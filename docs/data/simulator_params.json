@@ -1,65 +1,130 @@
 {
-  "baseline_yield": 172.5,
+  "model": "Ridge regression on 6 inputs and their squares (scaling folded into the coefficients)",
+  "formula": "yield = intercept + sum over inputs of (b1 * x + b2 * x^2)",
+  "alpha": 10,
+  "intercept": -477.76328710299646,
+  "trained_on": "2017-2021 (alpha chosen on 2021 with a 2017-2020 fit)",
+  "validation_2021": {
+    "rmse": 36.61,
+    "mae": 29.82,
+    "r2": 0.08
+  },
+  "validation_2021_training_mean_baseline": {
+    "rmse": 38.56,
+    "mae": 31.0,
+    "r2": -0.02
+  },
+  "test_2022": {
+    "rmse": 36.12,
+    "mae": 28.18,
+    "r2": 0.3
+  },
+  "test_2022_training_mean_baseline": {
+    "rmse": 43.45,
+    "mae": 34.25,
+    "r2": -0.02
+  },
+  "note": "Uses no county history, so it explains much less than the county-mean baseline. It shows how yield moves with weather and soil on average across counties, not a forecast for a particular farm. Values outside the slider range were not seen in training.",
   "features": {
     "precip": {
-      "name": "Growing Season Rainfall",
+      "column": "precip_season",
+      "name": "Growing-season rainfall (Apr-Sep total)",
       "unit": "mm",
-      "min": 200,
-      "max": 1200,
-      "default": 620,
-      "optimal": 650,
-      "penalty_quadratic": -0.00018,
-      "description": "Total precipitation from April to September. Deficits below 450mm stress vegetative growth; extreme flooding above 900mm waterlogs roots."
+      "step": 10,
+      "min": 110,
+      "max": 1400,
+      "default": 610,
+      "b1": 0.01262886730872717,
+      "b2": -3.430871770252429e-06
     },
-    "heat_days": {
-      "name": "Summer Heat Days (>30\u00b0C)",
+    "heat": {
+      "column": "heat_days_season",
+      "name": "Heat days, max temp > 30 \u00b0C (Apr-Sep)",
       "unit": "days",
-      "min": 0,
-      "max": 90,
-      "default": 22,
-      "threshold": 18,
-      "penalty_linear": -0.85,
-      "description": "Days exceeding 30\u00b0C in July & August. Above 18 days, thermal stress disrupts corn silking and kernel formation."
+      "step": 1,
+      "min": 1,
+      "max": 136,
+      "default": 48,
+      "b1": -0.5739801724918251,
+      "b2": 0.0008591711190268172
     },
-    "tavg": {
-      "name": "Mean Summer Temperature",
+    "temp": {
+      "column": "summer_tavg",
+      "name": "Mean summer temperature (Jun-Aug)",
       "unit": "\u00b0C",
-      "min": 16.0,
-      "max": 32.0,
-      "default": 24.2,
-      "optimal": 23.5,
-      "penalty_quadratic": -1.1,
-      "description": "Average June\u2013August 24h temperature. Nighttime heat accelerates plant respiration and reduces carbohydrate storage."
+      "step": 0.1,
+      "min": 18.8,
+      "max": 28.7,
+      "default": 23.6,
+      "b1": 37.637816322656235,
+      "b2": -0.758406646857743
     },
     "soc": {
-      "name": "Soil Organic Carbon (0-5cm)",
+      "column": "soc_0-5cm",
+      "name": "Soil organic carbon (0-5 cm)",
       "unit": "g/kg",
-      "min": 5.0,
-      "max": 100.0,
-      "default": 35.0,
-      "reference": 30.0,
-      "gain_linear": 0.22,
-      "description": "Higher organic matter increases soil water-holding capacity, buffering crops against dry spells and drought."
+      "step": 1,
+      "min": 15,
+      "max": 151,
+      "default": 43,
+      "b1": -1.0420444611096227,
+      "b2": 0.00386392736381044
     },
     "nitrogen": {
-      "name": "Soil Total Nitrogen (0-5cm)",
+      "column": "nitrogen_0-5cm",
+      "name": "Soil total nitrogen (0-5 cm)",
       "unit": "g/kg",
-      "min": 0.5,
-      "max": 8.0,
-      "default": 2.5,
-      "reference": 2.0,
-      "gain_linear": 3.8,
-      "description": "Native soil nitrogen provides baseline nutrient supply for early canopy expansion before supplemental fertilizer uptake."
+      "step": 0.1,
+      "min": 1.6,
+      "max": 13.7,
+      "default": 3.9,
+      "b1": 2.920413407850136,
+      "b2": -0.17327976662029826
     },
     "ph": {
-      "name": "Soil pH (H2O)",
+      "column": "phh2o_0-5cm",
+      "name": "Soil pH (H2O, 0-5 cm)",
       "unit": "pH",
-      "min": 4.5,
-      "max": 8.5,
-      "default": 6.5,
-      "optimal": 6.5,
-      "penalty_quadratic": -5.2,
-      "description": "Nutrient bioavailability peaks near pH 6.2\u20136.8. Acidic soils (<5.5) or strongly alkaline soils (>7.8) induce micronutrient toxicities or lockups."
+      "step": 0.1,
+      "min": 4.7,
+      "max": 7.4,
+      "default": 6.1,
+      "b1": 77.10698512787513,
+      "b2": -6.514413344245354
+    }
+  },
+  "presets": {
+    "typical": {
+      "precip": 610,
+      "heat": 48,
+      "temp": 23.6,
+      "soc": 43,
+      "nitrogen": 3.9,
+      "ph": 6.1
+    },
+    "cornbelt": {
+      "precip": 650,
+      "heat": 42,
+      "temp": 23.2,
+      "soc": 33,
+      "nitrogen": 3.8,
+      "ph": 6.3
+    },
+    "hotdry": {
+      "precip": 310,
+      "heat": 102,
+      "temp": 26.2,
+      "soc": 43,
+      "nitrogen": 3.9,
+      "ph": 6.1
+    },
+    "acidic": {
+      "precip": 610,
+      "heat": 48,
+      "temp": 23.6,
+      "soc": 27,
+      "nitrogen": 3.9,
+      "ph": 4.9
     }
   }
 }

@@ -213,20 +213,6 @@
       "gain_pct": 9.7
     }
   ],
-  "final_test_2022": {
-    "model": "HistGradientBoosting (Tuned)",
-    "features": "weather+geo+soil",
-    "optimal_params": {
-      "learning_rate": 0.1,
-      "max_iter": 500,
-      "min_samples_leaf": 20
-    },
-    "rmse": 24.9,
-    "mae": 18.82,
-    "r2": 0.67,
-    "test_year": 2022,
-    "test_counties": 1515
-  },
   "baselines_val2021": {
     "county_mean": {
       "rmse": 23.83,
@@ -237,11 +223,55 @@
       "rmse": 27.51,
       "mae": 20.98,
       "r2": 0.48
+    }
+  },
+  "val_2021": {
+    "train_years": "2017-2020",
+    "n_counties": 1469,
+    "full_model": {
+      "rmse": 25.61,
+      "mae": 20.07,
+      "r2": 0.55,
+      "gain_pct_vs_baseline": -7.5
     },
-    "training_mean_spatial": {
-      "rmse": 36.49,
-      "mae": 29.11,
-      "r2": -0.01
+    "weather_only": {
+      "rmse": 30.23,
+      "mae": 23.21,
+      "r2": 0.37,
+      "gain_pct_vs_baseline": -26.9
+    },
+    "county_mean_baseline": {
+      "rmse": 23.83,
+      "mae": 18.77,
+      "r2": 0.61
+    }
+  },
+  "final_test_2022": {
+    "model": "HistGradientBoosting (tuned on 2021)",
+    "features": "weather+geo+soil",
+    "params": {
+      "learning_rate": 0.1,
+      "max_iter": 500,
+      "min_samples_leaf": 20
+    },
+    "train_years": "2017-2021",
+    "n_counties": 1515,
+    "full_model": {
+      "rmse": 24.9,
+      "mae": 18.82,
+      "r2": 0.67,
+      "gain_pct_vs_baseline": 2.3
+    },
+    "weather_only": {
+      "rmse": 33.72,
+      "mae": 25.13,
+      "r2": 0.39,
+      "gain_pct_vs_baseline": -32.3
+    },
+    "county_mean_baseline": {
+      "rmse": 25.48,
+      "mae": 18.97,
+      "r2": 0.65
     }
   }
 }

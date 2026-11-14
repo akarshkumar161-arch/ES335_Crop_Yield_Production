@@ -264,7 +264,7 @@ Error: ${c.err_full} bu/ac</title>
     const rain = document.getElementById("insp-rain");
     const heat = document.getElementById("insp-heat");
 
-    if (title) title.innerText = `${c.state_name} County (${c.state})`;
+    if (title) title.innerText = `County ${c.fips}, ${c.state_name}`;
     if (fips) fips.innerText = `FIPS: ${c.fips} | Lat: ${c.lat}°, Lon: ${c.lon}°`;
     if (actual) actual.innerText = `${c.actual} bu/ac`;
     if (pred) pred.innerText = `${c.pred_full} bu/ac`;
@@ -301,8 +301,10 @@ Error: ${c.err_full} bu/ac</title>
       const isTestYear = state.year === "2022";
       if (cardState) cardState.innerText = `All States (${allCounties.length} Counties)`;
       if (cardYield) cardYield.innerText = `${avgY} bu/ac`;
-      if (cardRmse) cardRmse.innerText = isTestYear ? "24.90 bu/ac (Test)" : "25.61 bu/ac (Val)";
-      if (cardGain) cardGain.innerText = isTestYear ? "+67% R² Explained" : "-7.5% vs Hist Baseline";
+      const m = isTestYear ? state.metricsData.final_test_2022 : state.metricsData.val_2021;
+      const full = m.full_model;
+      if (cardRmse) cardRmse.innerText = `${full.rmse.toFixed(2)} bu/ac (${isTestYear ? "Test" : "Val"})`;
+      if (cardGain) cardGain.innerText = `${full.gain_pct_vs_baseline > 0 ? "+" : ""}${full.gain_pct_vs_baseline}% vs county-mean baseline`;
     } else {
       const found = yearStats.find(s => s.state === state.selectedState);
       if (found) {
@@ -316,114 +318,109 @@ Error: ${c.err_full} bu/ac</title>
 
   // 4. Interactive What-If Crop Yield Simulator
   function initSimulator() {
-    const inputs = ["precip", "heat", "temp", "soc", "nitrogen", "ph"];
-    inputs.forEach(id => {
-      const el = document.getElementById(`sim-${id}`);
-      const valDisp = document.getElementById(`val-${id}`);
-      if (el && valDisp) {
-        el.addEventListener("input", () => {
-          valDisp.innerText = formatSimValue(id, el.value);
-          calculateSimulator();
-        });
-      }
+    const P = state.simulatorParams;
+    if (!P || !P.features) { showSimulatorUnavailable(); return; }
+
+    Object.entries(P.features).forEach(([key, f]) => {
+      const el = document.getElementById(`sim-${key}`);
+      const valDisp = document.getElementById(`val-${key}`);
+      const label = document.getElementById(`label-${key}`);
+      if (label) label.innerText = f.name;
+      if (!el) return;
+      // Slider range = 1st-99th percentile of the training data, so users stay where the model has data
+      el.min = f.min; el.max = f.max; el.step = f.step; el.value = f.default;
+      if (valDisp) valDisp.innerText = formatSimValue(key, f.default);
+      el.addEventListener("input", () => {
+        if (valDisp) valDisp.innerText = formatSimValue(key, el.value);
+        calculateSimulator();
+      });
     });
 
-    // Preset buttons
-    const presets = {
-      cornbelt: { precip: 650, heat: 16, temp: 23.5, soc: 42, nitrogen: 2.8, ph: 6.6 },
-      drought: { precip: 320, heat: 46, temp: 28.0, soc: 25, nitrogen: 2.0, ph: 6.5 },
-      highsoc: { precip: 450, heat: 35, temp: 26.5, soc: 75, nitrogen: 4.2, ph: 6.7 },
-      acidic: { precip: 620, heat: 20, temp: 24.0, soc: 20, nitrogen: 1.5, ph: 5.1 }
-    };
-
-    Object.keys(presets).forEach(key => {
+    Object.entries(P.presets || {}).forEach(([key, cfg]) => {
       const btn = document.getElementById(`btn-preset-${key}`);
-      if (btn) {
-        btn.addEventListener("click", () => {
-          applySimulatorPreset(presets[key]);
-        });
-      }
+      if (btn) btn.addEventListener("click", () => applySimulatorPreset(cfg));
     });
 
+    const acc = document.getElementById("sim-model-accuracy");
+    if (acc) {
+      const v = P.validation_2021, t = P.test_2022;
+      acc.innerText = `Model: Ridge regression, alpha = ${P.alpha}. ` +
+        `2021 validation RMSE ${v.rmse} bu/ac (R² ${v.r2}); 2022 test RMSE ${t.rmse} bu/ac (R² ${t.r2}). ` +
+        P.note;
+    }
     calculateSimulator();
   }
 
   function formatSimValue(id, val) {
-    if (id === "precip") return `${val} mm`;
-    if (id === "heat") return `${val} days`;
-    if (id === "temp") return `${parseFloat(val).toFixed(1)} °C`;
-    if (id === "soc") return `${parseFloat(val).toFixed(1)} g/kg`;
-    if (id === "nitrogen") return `${parseFloat(val).toFixed(1)} g/kg`;
-    if (id === "ph") return `${parseFloat(val).toFixed(1)}`;
-    return val;
+    const f = state.simulatorParams && state.simulatorParams.features[id];
+    const v = parseFloat(val);
+    const txt = f && f.step >= 1 ? v.toFixed(0) : v.toFixed(1);
+    return f && f.unit !== "pH" ? `${txt} ${f.unit}` : txt;
   }
 
   function applySimulatorPreset(cfg) {
     Object.keys(cfg).forEach(k => {
       const el = document.getElementById(`sim-${k}`);
       const disp = document.getElementById(`val-${k}`);
-      if (el && disp) {
+      if (el) {
         el.value = cfg[k];
-        disp.innerText = formatSimValue(k, cfg[k]);
+        if (disp) disp.innerText = formatSimValue(k, cfg[k]);
       }
     });
     calculateSimulator();
   }
 
+  // Same formula as the exported Ridge model:
+  //   yield = intercept + sum_k (b1_k * x_k + b2_k * x_k^2)
+  function featureTerm(f, x) { return f.b1 * x + f.b2 * x * x; }
+
+  function predictSimulator(values) {
+    const P = state.simulatorParams;
+    let y = P.intercept;
+    Object.entries(P.features).forEach(([k, f]) => { y += featureTerm(f, values[k]); });
+    return y;
+  }
+
   function calculateSimulator() {
-    const precip = parseFloat(document.getElementById("sim-precip")?.value || 620);
-    const heat = parseFloat(document.getElementById("sim-heat")?.value || 22);
-    const temp = parseFloat(document.getElementById("sim-temp")?.value || 24.2);
-    const soc = parseFloat(document.getElementById("sim-soc")?.value || 35.0);
-    const nitrogen = parseFloat(document.getElementById("sim-nitrogen")?.value || 2.5);
-    const ph = parseFloat(document.getElementById("sim-ph")?.value || 6.5);
+    const P = state.simulatorParams;
+    if (!P || !P.features) return;
 
-    const baseYield = 172.5;
+    const values = {}, defaults = {};
+    Object.entries(P.features).forEach(([k, f]) => {
+      const el = document.getElementById(`sim-${k}`);
+      values[k] = el ? parseFloat(el.value) : f.default;
+      defaults[k] = f.default;
+    });
 
-    // Response equations calibrated to HGB feature splits
-    // 1. Rainfall curve: optimal at 650mm, penalties for drought and waterlogging
-    const rainDelta = -0.00018 * Math.pow(precip - 650.0, 2) + 4.0;
-    
-    // 2. Heat stress: severe threshold above 18 days
-    const heatPenalty = heat > 18 ? -0.85 * (heat - 18) : +2.0;
+    const predicted = predictSimulator(values);
+    const reference = predictSimulator(defaults);   // a "typical county": every input at its median
 
-    // 3. Summer temperature: quadratic curve around 23.5°C
-    const tempPenalty = -1.1 * Math.pow(temp - 23.5, 2);
-
-    // 4. Soil Organic Carbon: buffering capacity
-    const socGain = 0.22 * (soc - 30.0);
-
-    // 5. Nitrogen content
-    const nitroGain = 3.8 * (nitrogen - 2.0);
-
-    // 6. Soil pH: quadratic lockup outside 6.2 - 6.8
-    const phPenalty = -5.2 * Math.pow(ph - 6.5, 2);
-
-    const totalPredicted = Math.max(30.0, Math.min(255.0, baseYield + rainDelta + heatPenalty + tempPenalty + socGain + nitroGain + phPenalty));
-
-    // Update UI elements
     const predEl = document.getElementById("sim-output-yield");
     const compEl = document.getElementById("sim-output-comparison");
-    if (predEl) predEl.innerText = totalPredicted.toFixed(1);
-
-    const diff = totalPredicted - baseYield;
+    if (predEl) predEl.innerText = predicted.toFixed(1);
     if (compEl) {
-      if (diff >= 0) {
-        compEl.innerText = `+${diff.toFixed(1)} bu/ac (+${((diff/baseYield)*100).toFixed(1)}%) vs National Avg`;
-        compEl.className = "yield-comparison badge-success";
-      } else {
-        compEl.innerText = `${diff.toFixed(1)} bu/ac (${((diff/baseYield)*100).toFixed(1)}%) vs National Avg`;
-        compEl.className = "yield-comparison badge-danger";
-      }
+      const diff = predicted - reference;
+      const pct = (diff / reference) * 100;
+      compEl.innerText = `${diff >= 0 ? "+" : ""}${diff.toFixed(1)} bu/ac (${diff >= 0 ? "+" : ""}${pct.toFixed(1)}%) vs typical county (${reference.toFixed(1)})`;
+      compEl.className = `yield-comparison ${diff >= 0 ? "badge-success" : "badge-danger"}`;
     }
 
-    // Breakdown rows
-    updateBreakdownRow("impact-rain", rainDelta, "mm Rain Response");
-    updateBreakdownRow("impact-heat", heatPenalty, "Extreme Heat Stress");
-    updateBreakdownRow("impact-temp", tempPenalty, "Temperature Variance");
-    updateBreakdownRow("impact-soc", socGain, "SOC Moisture Buffer");
-    updateBreakdownRow("impact-nitro", nitroGain, "Native Soil Nitrogen");
-    updateBreakdownRow("impact-ph", phPenalty, "pH Bioavailability");
+    // Contribution of each input = its term at the chosen value minus its term at the median.
+    // Because the model is additive, these add up exactly to the difference shown above.
+    const rows = { precip: "impact-rain", heat: "impact-heat", temp: "impact-temp",
+                   soc: "impact-soc", nitrogen: "impact-nitro", ph: "impact-ph" };
+    Object.entries(rows).forEach(([k, id]) => {
+      const f = P.features[k];
+      if (!f) return;
+      updateBreakdownRow(id, featureTerm(f, values[k]) - featureTerm(f, f.default), f.name);
+    });
+  }
+
+  function showSimulatorUnavailable() {
+    const predEl = document.getElementById("sim-output-yield");
+    const compEl = document.getElementById("sim-output-comparison");
+    if (predEl) predEl.innerText = "–";
+    if (compEl) compEl.innerText = "Model file could not be loaded. Serve the site over HTTP (see README).";
   }
 
   function updateBreakdownRow(id, val, label) {
@@ -525,7 +522,7 @@ Error: ${c.err_full} bu/ac</title>
   }
 
   function initSimulatorOffline() {
-    // Basic offline calculations if JSON fetches are blocked locally
-    initSimulator();
+    // The simulator needs simulator_params.json; without it, say so instead of showing made-up numbers
+    showSimulatorUnavailable();
   }
 });

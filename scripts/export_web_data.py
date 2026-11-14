@@ -1,19 +1,44 @@
 #!/usr/bin/env python3
 """
 scripts/export_web_data.py
-Processes corn_model_table.csv and ablation CSVs to generate web-ready JSON files
-for the GitHub Pages interactive website in docs/data/.
+
+Trains the models used on the website and writes the JSON files in docs/data/.
+Every number shown on the map and in the simulator comes from a model trained here
+and evaluated on years it never saw. Nothing is hand-tuned or blended with the truth.
+
+  * counties_summary.json  - per county, real out-of-sample predictions:
+        2021: models trained on 2017-2020 (validation year)
+        2022: models trained on 2017-2021 (held-out test year)
+        full model    = HistGradientBoosting on weather + geo + soil
+        weather-only  = HistGradientBoosting on weather
+        baseline      = county mean of the training years (fallback: state mean, then overall mean)
+  * state_errors.json      - per-state RMSE of the full model vs the baseline
+  * simulator_params.json  - a Ridge model (6 inputs + their squares) exported as plain numbers
+                             so the browser can run exactly the same model
+  * ablation_metrics.json  - notebook result tables + baselines and test metrics computed here
+
+Usage:  python scripts/export_web_data.py
 """
 
-import os
-import csv
 import json
-import math
-from collections import defaultdict
+import os
+import re
+
+import numpy as np
+import pandas as pd
+from sklearn.ensemble import HistGradientBoostingRegressor
+from sklearn.linear_model import Ridge
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.preprocessing import StandardScaler
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = os.path.join(BASE_DIR, "es335_crop")
+DATA_DIR = os.environ.get("DATA_DIR", os.path.join(BASE_DIR, "es335_crop"))
 OUT_DIR = os.environ.get("OUT_DIR", os.path.join(BASE_DIR, "docs", "data"))
+SEED = 42
+
+# Hyperparameters, taken from notebooks/01_model_ablation_and_tuning.ipynb
+HGB_VAL_PARAMS = dict(max_iter=300, learning_rate=0.05)                          # ablation run (val 2021)
+HGB_TEST_PARAMS = dict(learning_rate=0.1, max_iter=500, min_samples_leaf=20)     # tuned on 2021, used for 2022
 
 STATE_NAMES = {
     "01": ("Alabama", "AL"), "04": ("Arizona", "AZ"), "05": ("Arkansas", "AR"),
@@ -33,313 +58,306 @@ STATE_NAMES = {
     "50": ("Vermont", "VT"), "51": ("Virginia", "VA"), "53": ("Washington", "WA"),
     "54": ("West Virginia", "WV"), "55": ("Wisconsin", "WI"), "56": ("Wyoming", "WY"),
 }
-
 CORN_BELT_STATES = {"17", "18", "19", "26", "27", "29", "31", "39", "55"}
+WEST_STATES = {"53", "16", "08", "06", "41"}
 
-def load_ablation_metrics():
-    """Load benchmark and ablation CSVs."""
-    res = {}
-    
-    # 1. Direct models ablation (val 2021)
-    ablation_p = os.path.join(DATA_DIR, "ablation_val2021.csv")
-    if os.path.exists(ablation_p):
-        direct = []
-        with open(ablation_p, mode="r", encoding="utf-8") as f:
-            for r in csv.DictReader(f):
-                direct.append({
-                    "features": r["features"],
-                    "model": r["model"],
-                    "rmse": round(float(r["RMSE"]), 2),
-                    "mae": round(float(r["MAE"]), 2),
-                    "r2": round(float(r["R2"]), 2),
-                    "gain_pct": round(float(r["RMSE_gain_vs_county_mean_%"]), 1)
-                })
-        res["direct_ablation_val2021"] = direct
 
-    # 2. Setting A: Anomaly models (val 2021)
-    set_a_p = os.path.join(DATA_DIR, "settingA_anomaly_val2021.csv")
-    if os.path.exists(set_a_p):
-        set_a = []
-        with open(set_a_p, mode="r", encoding="utf-8") as f:
-            for r in csv.DictReader(f):
-                set_a.append({
-                    "features": r["features"],
-                    "model": r["model"],
-                    "rmse": round(float(r["RMSE"]), 2),
-                    "mae": round(float(r["MAE"]), 2),
-                    "r2": round(float(r["R2"]), 2),
-                    "gain_pct": round(float(r["RMSE_gain_vs_baseline_%"]), 1)
-                })
-        res["settingA_anomaly_val2021"] = set_a
+# --------------------------------------------------------------------------- helpers
+def scores(y, p):
+    return {"rmse": float(np.sqrt(mean_squared_error(y, p))),
+            "mae": float(mean_absolute_error(y, p)),
+            "r2": float(r2_score(y, p))}
 
-    # 3. Setting B: Leave-states-out (spatial CV)
-    set_b_p = os.path.join(DATA_DIR, "settingB_leave_states_out.csv")
-    if os.path.exists(set_b_p):
-        set_b = []
-        with open(set_b_p, mode="r", encoding="utf-8") as f:
-            for r in csv.DictReader(f):
-                set_b.append({
-                    "features": r["features"],
-                    "model": r["model"],
-                    "rmse": round(float(r["RMSE"]), 2),
-                    "mae": round(float(r["MAE"]), 2),
-                    "r2": round(float(r["R2"]), 2),
-                    "gain_pct": round(float(r["RMSE_gain_vs_baseline_%"]), 1)
-                })
-        res["settingB_leave_states_out"] = set_b
 
-    # 4. Final 2022 test set metrics
-    res["final_test_2022"] = {
-        "model": "HistGradientBoosting (Tuned)",
-        "features": "weather+geo+soil",
-        "optimal_params": {"learning_rate": 0.1, "max_iter": 500, "min_samples_leaf": 20},
-        "rmse": 24.90,
-        "mae": 18.82,
-        "r2": 0.67,
-        "test_year": 2022,
-        "test_counties": 1515
+def rounded(d, n=2):
+    return {k: round(v, n) for k, v in d.items()}
+
+
+def load_table():
+    df = pd.read_csv(os.path.join(DATA_DIR, "corn_model_table.csv"),
+                     dtype={"FIPS": str, "STATEFP": str})
+    df["FIPS"] = df["FIPS"].str.zfill(5)
+    df["STATEFP"] = df["STATEFP"].str.zfill(2)
+    # summer (Jun-Aug) mean temperature, used by the simulator and the county inspector
+    df["summer_tavg"] = df[["tavg_m06", "tavg_m07", "tavg_m08"]].mean(axis=1)
+    return df
+
+
+def feature_groups(df):
+    # same regex as the notebooks: 48 monthly columns + precip_season + heat_days_season = 50
+    weather = [c for c in df.columns if re.match(r"(tavg|tmax|tmin|precip|rh|vpd|srad|heat_days)_", c)]
+    soil = [c for c in df.columns if c.startswith(("nitrogen", "soc", "phh2o"))]
+    geo = ["lat", "lon"]
+    return weather, geo, soil
+
+
+def county_mean_baseline(train, target):
+    """County mean of training years -> state mean -> overall mean."""
+    cm = train.groupby("FIPS")["Yield"].mean()
+    sm = train.groupby("STATEFP")["Yield"].mean()
+    return (target["FIPS"].map(cm)
+            .fillna(target["STATEFP"].map(sm))
+            .fillna(train["Yield"].mean()))
+
+
+# --------------------------------------------------------------------------- 1. map data
+def predict_year(df, year, hgb_params, weather, geo, soil):
+    train = df[df["Year"].between(2017, year - 1)]
+    test = df[df["Year"] == year].copy()
+
+    full_cols = weather + geo + soil
+    m_full = HistGradientBoostingRegressor(**hgb_params, random_state=SEED).fit(train[full_cols], train["Yield"])
+    m_w = HistGradientBoostingRegressor(**hgb_params, random_state=SEED).fit(train[weather], train["Yield"])
+
+    test["pred_full"] = m_full.predict(test[full_cols])
+    test["pred_w"] = m_w.predict(test[weather])
+    test["baseline"] = county_mean_baseline(train, test)
+
+    metrics = {
+        "train_years": f"2017-{year - 1}",
+        "n_counties": int(len(test)),
+        "full_model": rounded(scores(test["Yield"], test["pred_full"])),
+        "weather_only": rounded(scores(test["Yield"], test["pred_w"])),
+        "county_mean_baseline": rounded(scores(test["Yield"], test["baseline"])),
     }
+    b = metrics["county_mean_baseline"]["rmse"]
+    metrics["full_model"]["gain_pct_vs_baseline"] = round((b - metrics["full_model"]["rmse"]) / b * 100, 1)
+    metrics["weather_only"]["gain_pct_vs_baseline"] = round((b - metrics["weather_only"]["rmse"]) / b * 100, 1)
+    return test, metrics
 
-    # Baselines summary
-    res["baselines_val2021"] = {
-        "county_mean": {"rmse": 23.83, "mae": 18.77, "r2": 0.61},
-        "prev_year": {"rmse": 27.51, "mae": 20.98, "r2": 0.48},
-        "training_mean_spatial": {"rmse": 36.49, "mae": 29.11, "r2": -0.01}
-    }
 
-    return res
+def county_records(test):
+    out = []
+    for r in test.to_dict("records"):
+        st = r["STATEFP"]
+        name, abbr = STATE_NAMES.get(st, (f"State {st}", st))
+        err_full = r["Yield"] - r["pred_full"]     # sign convention: actual - predicted
+        err_w = r["Yield"] - r["pred_w"]
+        out.append({
+            "fips": r["FIPS"], "state": abbr, "state_name": name,
+            "lat": round(float(r["lat"]), 3), "lon": round(float(r["lon"]), 3),
+            "actual": round(float(r["Yield"]), 1),
+            "baseline": round(float(r["baseline"]), 1),
+            "pred_full": round(float(r["pred_full"]), 1),
+            "pred_w": round(float(r["pred_w"]), 1),
+            "err_full": round(float(err_full), 1),
+            "err_w": round(float(err_w), 1),
+            "err_base": round(float(r["Yield"] - r["baseline"]), 1),
+            # > 0 means adding geo + soil reduced this county's absolute error
+            "soil_improvement": round(float(abs(err_w) - abs(err_full)), 1),
+            "precip": round(float(r["precip_season"]), 1),
+            "heat_days": round(float(r["heat_days_season"]), 1),
+            "tavg": round(float(r["summer_tavg"]), 1),
+            "soc": round(float(r["soc_0-5cm"]), 1),
+            "nitrogen": round(float(r["nitrogen_0-5cm"]), 2),
+            "ph": round(float(r["phh2o_0-5cm"]), 1),
+        })
+    return out
 
-def process_county_data():
-    """Extract county-level predictions, baselines, and errors for 2021 and 2022."""
-    model_table_p = os.path.join(DATA_DIR, "corn_model_table.csv")
-    
-    # Store records by year
-    years_data = defaultdict(list)
-    county_train_yields = defaultdict(list)
-    state_train_yields = defaultdict(list)
-    all_train_yields = []
 
-    with open(model_table_p, mode="r", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            fips = row["FIPS"].zfill(5)
-            year = int(row["Year"])
-            yield_val = float(row["Yield"])
-            statefp = row["STATEFP"].zfill(2)
-            
-            row["FIPS"] = fips
-            row["STATEFP"] = statefp
-            row["Yield"] = yield_val
-            row["lat"] = float(row["lat"]) if row["lat"] else 0.0
-            row["lon"] = float(row["lon"]) if row["lon"] else 0.0
-            
-            if 2017 <= year <= 2020:
-                county_train_yields[fips].append(yield_val)
-                state_train_yields[statefp].append(yield_val)
-                all_train_yields.append(yield_val)
-            
-            years_data[year].append(row)
+def state_errors(test, year):
+    rows = []
+    for st, g in test.groupby("STATEFP"):
+        name, abbr = STATE_NAMES.get(st, (f"State {st}", st))
+        s_full = scores(g["Yield"], g["pred_full"]) if len(g) > 1 else {
+            "rmse": float(abs(g["Yield"] - g["pred_full"]).iloc[0]), "mae": float(abs(g["Yield"] - g["pred_full"]).iloc[0])}
+        rmse_base = float(np.sqrt(((g["Yield"] - g["baseline"]) ** 2).mean()))
+        corn_belt = st in CORN_BELT_STATES
+        rows.append({
+            "year": year, "state": abbr, "state_code": st, "state_name": name,
+            "counties_count": int(len(g)),
+            "avg_yield": round(float(g["Yield"].mean()), 1),
+            "rmse_full": round(s_full["rmse"], 2),
+            "rmse_base": round(rmse_base, 2),
+            "mae_full": round(s_full["mae"], 2),
+            "rmse_gain_pct": round((rmse_base - s_full["rmse"]) / rmse_base * 100, 1) if rmse_base > 0 else 0.0,
+            "is_corn_belt": corn_belt,
+            "region": "Corn Belt" if corn_belt else ("West / Pacific" if st in WEST_STATES else "General Plains / East"),
+        })
+    return rows
 
-    overall_mean = sum(all_train_yields) / len(all_train_yields) if all_train_yields else 165.0
-    county_means = {fips: sum(v)/len(v) for fips, v in county_train_yields.items()}
-    state_means = {st: sum(v)/len(v) for st, v in state_train_yields.items()}
 
-    # Compute county metrics for 2021 and 2022
-    counties_summary = {}
+# --------------------------------------------------------------------------- 2. simulator model
+SIM_FEATURES = [
+    # key in JSON / slider id suffix, column, label, unit, slider step
+    ("precip",   "precip_season",    "Growing-season rainfall (Apr-Sep total)", "mm",   10),
+    ("heat",     "heat_days_season", "Heat days, max temp > 30 °C (Apr-Sep)",   "days", 1),
+    ("temp",     "summer_tavg",         "Mean summer temperature (Jun-Aug)",       "°C",   0.1),
+    ("soc",      "soc_0-5cm",        "Soil organic carbon (0-5 cm)",            "g/kg", 1),
+    ("nitrogen", "nitrogen_0-5cm",   "Soil total nitrogen (0-5 cm)",            "g/kg", 0.1),
+    ("ph",       "phh2o_0-5cm",      "Soil pH (H2O, 0-5 cm)",                   "pH",   0.1),
+]
 
-    for year in [2021, 2022]:
-        year_list = []
-        for r in years_data[year]:
-            fips = r["FIPS"]
-            st = r["STATEFP"]
-            actual = r["Yield"]
-            
-            # Baseline
-            base = county_means.get(fips, state_means.get(st, overall_mean))
-            
-            # Key features
-            precip = float(r.get("precip_season", 0) or 0)
-            heat_days = float(r.get("heat_days_season", 0) or 0)
-            tavg = (float(r.get("tavg_m06", 22) or 22) + float(r.get("tavg_m07", 25) or 25) + float(r.get("tavg_m08", 24) or 24)) / 3.0
-            vpd = (float(r.get("vpd_m06", 0.8) or 0.8) + float(r.get("vpd_m07", 0.9) or 0.9) + float(r.get("vpd_m08", 0.8) or 0.8)) / 3.0
-            
-            soc = float(r.get("soc_0-5cm", 25) or 25)
-            nitrogen = float(r.get("nitrogen_0-5cm", 2.0) or 2.0)
-            ph = float(r.get("phh2o_0-5cm", 6.2) or 6.2)
-            
-            # Synthetic calibrated prediction matching tuned model performance (RMSE ~24.9, R2 ~0.67)
-            # Weather effect
-            rain_eff = -0.00015 * ((precip - 600.0) ** 2) + 5.0
-            heat_eff = -0.85 * max(0, heat_days - 18)
-            temp_eff = -1.2 * max(0, tavg - 26.0)
-            weather_delta = rain_eff + heat_eff + temp_eff
-            
-            # Soil effect
-            soc_eff = 0.18 * (soc - 30.0)
-            ph_eff = -2.5 * ((ph - 6.5) ** 2)
-            soil_delta = soc_eff + ph_eff
-            
-            # Predictions
-            pred_base = base
-            pred_w = base + weather_delta
-            pred_full = base + weather_delta + soil_delta
-            
-            # Calibration dampening to ensure RMSE matches empirical tables
-            calibrated_full = 0.72 * pred_full + 0.28 * actual
-            err_full = actual - calibrated_full
-            err_w = actual - (0.65 * pred_w + 0.35 * actual)
-            err_base = actual - pred_base
-            
-            state_name, state_abbr = STATE_NAMES.get(st, (f"State {st}", st))
-            
-            year_list.append({
-                "fips": fips,
-                "state": state_abbr,
-                "state_name": state_name,
-                "lat": round(r["lat"], 3),
-                "lon": round(r["lon"], 3),
-                "actual": round(actual, 1),
-                "baseline": round(pred_base, 1),
-                "pred_full": round(calibrated_full, 1),
-                "err_full": round(err_full, 1),
-                "err_w": round(err_w, 1),
-                "err_base": round(err_base, 1),
-                "soil_improvement": round(abs(err_w) - abs(err_full), 1),
-                "precip": round(precip, 1),
-                "heat_days": round(heat_days, 1),
-                "tavg": round(tavg, 1),
-                "soc": round(soc, 1),
-                "nitrogen": round(nitrogen, 2),
-                "ph": round(ph, 1)
-            })
-            
-        counties_summary[str(year)] = year_list
 
-    return counties_summary
+def sim_design(df):
+    """Each input plus its square, so the Ridge can learn a curve (e.g. too little or too much rain)."""
+    X = pd.DataFrame(index=df.index)
+    for key, col, *_ in SIM_FEATURES:
+        X[f"{key}"] = df[col]
+        X[f"{key}^2"] = df[col] ** 2
+    return X
 
-def compute_state_errors(counties_summary):
-    """Compute regional and state-level error distributions."""
-    state_stats = []
-    
-    for year in ["2021", "2022"]:
-        data = counties_summary[year]
-        by_state = defaultdict(list)
-        for r in data:
-            by_state[r["state"]].append(r)
-            
-        for state_abbr, rows in by_state.items():
-            n = len(rows)
-            y_true = [x["actual"] for x in rows]
-            p_full = [x["pred_full"] for x in rows]
-            p_base = [x["baseline"] for x in rows]
-            
-            rmse_full = math.sqrt(sum((yt - yp)**2 for yt, yp in zip(y_true, p_full)) / n)
-            rmse_base = math.sqrt(sum((yt - yp)**2 for yt, yp in zip(y_true, p_base)) / n)
-            mae_full = sum(abs(yt - yp) for yt, yp in zip(y_true, p_full)) / n
-            avg_yield = sum(y_true) / n
-            
-            st_code = rows[0]["fips"][:2]
-            is_corn_belt = st_code in CORN_BELT_STATES
-            
-            state_stats.append({
-                "year": int(year),
-                "state": state_abbr,
-                "state_code": st_code,
-                "state_name": rows[0]["state_name"],
-                "counties_count": n,
-                "avg_yield": round(avg_yield, 1),
-                "rmse_full": round(rmse_full, 2),
-                "rmse_base": round(rmse_base, 2),
-                "mae_full": round(mae_full, 2),
-                "rmse_gain_pct": round((rmse_base - rmse_full) / rmse_base * 100, 1) if rmse_base > 0 else 0.0,
-                "is_corn_belt": is_corn_belt,
-                "region": "Corn Belt" if is_corn_belt else ("West / Pacific" if st_code in {"53", "16", "08", "06", "41"} else "General Plains / East")
-            })
 
-    # Sort descending by error for 2021
-    state_stats.sort(key=lambda x: (x["year"], -x["rmse_full"]))
-    return state_stats
+def fit_sim(train, alpha):
+    X = sim_design(train)
+    scaler = StandardScaler().fit(X)
+    model = Ridge(alpha=alpha).fit(scaler.transform(X), train["Yield"])
+    return scaler, model
 
-def compute_simulator_params():
-    """Parameters for the real-time client-side interactive yield simulator."""
-    return {
-        "baseline_yield": 172.5,
-        "features": {
-            "precip": {
-                "name": "Growing Season Rainfall",
-                "unit": "mm",
-                "min": 200, "max": 1200, "default": 620,
-                "optimal": 650,
-                "penalty_quadratic": -0.00018,
-                "description": "Total precipitation from April to September. Deficits below 450mm stress vegetative growth; extreme flooding above 900mm waterlogs roots."
-            },
-            "heat_days": {
-                "name": "Summer Heat Days (>30°C)",
-                "unit": "days",
-                "min": 0, "max": 90, "default": 22,
-                "threshold": 18,
-                "penalty_linear": -0.85,
-                "description": "Days exceeding 30°C in July & August. Above 18 days, thermal stress disrupts corn silking and kernel formation."
-            },
-            "tavg": {
-                "name": "Mean Summer Temperature",
-                "unit": "°C",
-                "min": 16.0, "max": 32.0, "default": 24.2,
-                "optimal": 23.5,
-                "penalty_quadratic": -1.1,
-                "description": "Average June–August 24h temperature. Nighttime heat accelerates plant respiration and reduces carbohydrate storage."
-            },
-            "soc": {
-                "name": "Soil Organic Carbon (0-5cm)",
-                "unit": "g/kg",
-                "min": 5.0, "max": 100.0, "default": 35.0,
-                "reference": 30.0,
-                "gain_linear": 0.22,
-                "description": "Higher organic matter increases soil water-holding capacity, buffering crops against dry spells and drought."
-            },
-            "nitrogen": {
-                "name": "Soil Total Nitrogen (0-5cm)",
-                "unit": "g/kg",
-                "min": 0.5, "max": 8.0, "default": 2.5,
-                "reference": 2.0,
-                "gain_linear": 3.8,
-                "description": "Native soil nitrogen provides baseline nutrient supply for early canopy expansion before supplemental fertilizer uptake."
-            },
-            "ph": {
-                "name": "Soil pH (H2O)",
-                "unit": "pH",
-                "min": 4.5, "max": 8.5, "default": 6.5,
-                "optimal": 6.5,
-                "penalty_quadratic": -5.2,
-                "description": "Nutrient bioavailability peaks near pH 6.2–6.8. Acidic soils (<5.5) or strongly alkaline soils (>7.8) induce micronutrient toxicities or lockups."
-            }
+
+def sim_predict(scaler, model, df):
+    return model.predict(scaler.transform(sim_design(df)))
+
+
+def build_simulator(df):
+    train = df[df["Year"].between(2017, 2020)]
+    val = df[df["Year"] == 2021]
+    trval = df[df["Year"].between(2017, 2021)]
+    test = df[df["Year"] == 2022]
+
+    # choose alpha on 2021 only
+    alphas = [0.01, 0.1, 1, 10, 100, 1000]
+    val_rmse = {}
+    for a in alphas:
+        sc, m = fit_sim(train, a)
+        val_rmse[a] = scores(val["Yield"], sim_predict(sc, m, val))["rmse"]
+    best_alpha = min(val_rmse, key=val_rmse.get)
+
+    sc_v, m_v = fit_sim(train, best_alpha)
+    val_scores = scores(val["Yield"], sim_predict(sc_v, m_v, val))
+    val_base = scores(val["Yield"], np.full(len(val), train["Yield"].mean()))
+
+    # final simulator model: refit on 2017-2021, test once on 2022
+    sc, m = fit_sim(trval, best_alpha)
+    test_scores = scores(test["Yield"], sim_predict(sc, m, test))
+    test_base = scores(test["Yield"], np.full(len(test), trval["Yield"].mean()))
+
+    # Fold the scaler into raw-unit coefficients:  yield = intercept + sum(b1*x + b2*x^2)
+    names = list(sim_design(trval).columns)
+    w = m.coef_ / sc.scale_
+    intercept = float(m.intercept_ - np.sum(m.coef_ * sc.mean_ / sc.scale_))
+    coef = dict(zip(names, w))
+
+    # sanity check: the folded formula must equal sklearn's prediction
+    Xt = sim_design(test)
+    manual = intercept + Xt.values @ w
+    assert np.allclose(manual, sim_predict(sc, m, test), atol=1e-6), "coefficient export mismatch"
+
+    def snap(x, step):
+        """Round to the slider step so the browser slider shows exactly this value."""
+        return round(round(x / step) * step, 1)
+
+    features = {}
+    for key, col, label, unit, step in SIM_FEATURES:
+        v = trval[col]
+        lo, hi = float(v.quantile(0.01)), float(v.quantile(0.99))
+        features[key] = {
+            "column": col, "name": label, "unit": unit, "step": step,
+            "min": snap(lo, step), "max": snap(hi, step),
+            "default": snap(float(v.median()), step),   # contributions are shown relative to this
+            "b1": float(coef[key]), "b2": float(coef[f"{key}^2"]),
         }
+
+    step_of = {key: step for key, _, _, _, step in SIM_FEATURES}
+
+    def q(key, col, p):
+        return snap(float(trval[col].quantile(p)), step_of[key])
+
+    cb = trval[trval["STATEFP"].isin({"17", "19"})]  # Illinois + Iowa
+    presets = {
+        "typical": {k: f["default"] for k, f in features.items()},
+        "cornbelt": {k: snap(float(cb[f["column"]].median()), f["step"]) for k, f in features.items()},
+        # 10th-percentile rain, 90th-percentile heat days and summer temperature; soil at medians
+        "hotdry": {**{k: f["default"] for k, f in features.items()},
+                   "precip": q("precip", "precip_season", 0.10), "heat": q("heat", "heat_days_season", 0.90),
+                   "temp": q("temp", "summer_tavg", 0.90)},
+        # 5th-percentile pH, 10th-percentile soil carbon; weather at medians
+        "acidic": {**{k: f["default"] for k, f in features.items()},
+                   "ph": q("ph", "phh2o_0-5cm", 0.05), "soc": q("soc", "soc_0-5cm", 0.10)},
     }
+
+    return {
+        "model": "Ridge regression on 6 inputs and their squares (scaling folded into the coefficients)",
+        "formula": "yield = intercept + sum over inputs of (b1 * x + b2 * x^2)",
+        "alpha": best_alpha,
+        "intercept": intercept,
+        "trained_on": "2017-2021 (alpha chosen on 2021 with a 2017-2020 fit)",
+        "validation_2021": rounded(val_scores),
+        "validation_2021_training_mean_baseline": rounded(val_base),
+        "test_2022": rounded(test_scores),
+        "test_2022_training_mean_baseline": rounded(test_base),
+        "note": ("Uses no county history, so it explains much less than the county-mean baseline. "
+                 "It shows how yield moves with weather and soil on average across counties, "
+                 "not a forecast for a particular farm. Values outside the slider range were not seen in training."),
+        "features": features,
+        "presets": presets,
+    }
+
+
+# --------------------------------------------------------------------------- 3. tables from notebooks
+def read_result_csv(name, gain_col):
+    p = os.path.join(DATA_DIR, name)
+    if not os.path.exists(p):
+        return None
+    t = pd.read_csv(p)
+    return [{"features": r["features"], "model": r["model"],
+             "rmse": round(r["RMSE"], 2), "mae": round(r["MAE"], 2), "r2": round(r["R2"], 2),
+             "gain_pct": round(r[gain_col], 1)} for _, r in t.iterrows()]
+
 
 def main():
-    print("Generating web data...")
     os.makedirs(OUT_DIR, exist_ok=True)
-    metrics = load_ablation_metrics()
-    with open(os.path.join(OUT_DIR, "ablation_metrics.json"), "w", encoding="utf-8") as f:
-        json.dump(metrics, f, indent=2)
-    print("Exported ablation_metrics.json")
+    df = load_table()
+    weather, geo, soil = feature_groups(df)
+    print(f"Loaded {len(df)} rows | features: weather={len(weather)} geo={len(geo)} soil={len(soil)}")
 
-    counties = process_county_data()
+    test21, m21 = predict_year(df, 2021, HGB_VAL_PARAMS, weather, geo, soil)
+    test22, m22 = predict_year(df, 2022, HGB_TEST_PARAMS, weather, geo, soil)
+    for y, m in [(2021, m21), (2022, m22)]:
+        print(f"{y}: full {m['full_model']} | weather-only {m['weather_only']} | baseline {m['county_mean_baseline']}")
+
+    counties = {"2021": county_records(test21), "2022": county_records(test22)}
     with open(os.path.join(OUT_DIR, "counties_summary.json"), "w", encoding="utf-8") as f:
         json.dump(counties, f)
-    print(f"Exported counties_summary.json (2021: {len(counties['2021'])}, 2022: {len(counties['2022'])} counties)")
 
-    state_errs = compute_state_errors(counties)
+    st = state_errors(test21, 2021) + state_errors(test22, 2022)
+    st.sort(key=lambda s: (s["year"], -s["rmse_full"]))
     with open(os.path.join(OUT_DIR, "state_errors.json"), "w", encoding="utf-8") as f:
-        json.dump(state_errs, f, indent=2)
-    print("Exported state_errors.json")
+        json.dump(st, f, indent=2)
 
-    sim_params = compute_simulator_params()
+    sim = build_simulator(df)
+    print(f"Simulator Ridge alpha={sim['alpha']} | val2021 {sim['validation_2021']} | test2022 {sim['test_2022']}")
     with open(os.path.join(OUT_DIR, "simulator_params.json"), "w", encoding="utf-8") as f:
-        json.dump(sim_params, f, indent=2)
-    print("Exported simulator_params.json")
+        json.dump(sim, f, indent=2)
 
-    print("All web data artifacts generated successfully!")
+    train20 = df[df["Year"].between(2017, 2020)]
+    val21 = df[df["Year"] == 2021]
+    prev = df[["FIPS", "Year", "Yield"]].assign(Year=lambda d: d["Year"] + 1).rename(columns={"Yield": "prev"})
+    corn_y_p = os.path.join(DATA_DIR, "corn_yield.csv")
+    if os.path.exists(corn_y_p):  # corn_yield.csv includes 2016, so 2017 rows also get a previous year
+        cy = pd.read_csv(corn_y_p, dtype={"FIPS": str})
+        cy["FIPS"] = cy["FIPS"].str.zfill(5)
+        prev = cy.assign(Year=cy["Year"] + 1).rename(columns={"Yield": "prev"})
+    v = val21.merge(prev[["FIPS", "Year", "prev"]], on=["FIPS", "Year"], how="left")
+    v_cm = county_mean_baseline(train20, v)
+
+    metrics = {
+        "direct_ablation_val2021": read_result_csv("ablation_val2021.csv", "RMSE_gain_vs_county_mean_%"),
+        "settingA_anomaly_val2021": read_result_csv("settingA_anomaly_val2021.csv", "RMSE_gain_vs_baseline_%"),
+        "settingB_leave_states_out": read_result_csv("settingB_leave_states_out.csv", "RMSE_gain_vs_baseline_%"),
+        "baselines_val2021": {
+            "county_mean": rounded(scores(v["Yield"], v_cm)),
+            "prev_year": rounded(scores(v["Yield"], v["prev"].fillna(v_cm))),
+        },
+        "val_2021": m21,
+        "final_test_2022": {"model": "HistGradientBoosting (tuned on 2021)", "features": "weather+geo+soil",
+                            "params": HGB_TEST_PARAMS, **m22},
+    }
+    with open(os.path.join(OUT_DIR, "ablation_metrics.json"), "w", encoding="utf-8") as f:
+        json.dump(metrics, f, indent=2)
+
+    print(f"Wrote counties_summary.json, state_errors.json, simulator_params.json, ablation_metrics.json to {OUT_DIR}")
+
 
 if __name__ == "__main__":
     main()

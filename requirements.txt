@@ -1,0 +1,9 @@
+# Python 3.10+
+# scikit-learn is pinned to the version Google Colab used when the notebooks were run.
+# HistGradientBoosting results change slightly between scikit-learn versions; with 1.6.1,
+# scripts/export_web_data.py reproduces the notebook numbers exactly (val 2021 RMSE 25.61, test 2022 RMSE 24.90).
+scikit-learn==1.6.1
+numpy>=1.26,<3
+pandas>=2.1
+matplotlib>=3.8
+jupyter
