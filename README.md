@@ -10,7 +10,7 @@
 
 ---
 
-## 🌾 Project Overview
+## Project Overview
 
 Farmers, regional planners, and crop insurers need accurate, pre-harvest estimates of county-level crop yields to optimize grain storage, manage food supply security, and underwrite insurance risk. This project investigates:
 
@@ -20,7 +20,7 @@ We evaluate tabular machine learning models (**Ridge Regression**, **Random Fore
 
 ---
 
-## 📊 Summary of Experimental Results
+## Summary of Experimental Results
 
 ### 1. Baselines (2021 Validation Set)
 * **County-Mean Baseline (4-year historical average):** RMSE = **23.83 bu/ac** | MAE = 18.77 | R² = 0.61
@@ -58,7 +58,7 @@ Trained on 2017–2021 data using optimal hyperparameters found on 2021 validati
 
 ---
 
-## 🌐 Interactive Deliverables (`docs/`)
+## Interactive Deliverables (`docs/`)
 
 Published live on GitHub Pages: [https://akarshkumar161-arch.github.io/ES335_Crop_Yield_Production/](https://akarshkumar161-arch.github.io/ES335_Crop_Yield_Production/)
 
@@ -73,7 +73,7 @@ Published live on GitHub Pages: [https://akarshkumar161-arch.github.io/ES335_Cro
 
 ---
 
-## 📁 Repository Structure
+## Repository Structure
 
 ```
 ES335_Crop_Yield_Production/
@@ -107,7 +107,7 @@ ES335_Crop_Yield_Production/
 
 ---
 
-## 🔬 Reproduction Guide
+## Reproduction Guide
 
 ### 1. Environment Setup
 ```bash
@@ -134,7 +134,7 @@ python3 -m http.server 8000 --directory docs
 
 ---
 
-## 📜 Academic Rubric Alignment (ES 335)
+## Academic Rubric Alignment (ES 335)
 This project strictly adheres to the ES 335 assessment criteria:
 * **Framing & Scope (10 pts):** Predict county corn yield at end of season; non-causal predictive framing.
 * **Data Understanding (10 pts):** Multi-source integration (CropNet USDA yields and WRF-HRRR weather, ISRIC SoilGrids, US Census TIGER). Elevation, soil texture and CDL cropland masking from the proposal are not included in this version.
