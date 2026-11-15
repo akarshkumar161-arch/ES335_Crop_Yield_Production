@@ -40,9 +40,9 @@ All sources are public and need no account or API key. The processed tables are 
 
 | Source | What we use | Access |
 |---|---|---|
-| CropNet (Lin et al., 2024) | USDA county corn yields 2016–2022; WRF-HRRR daily weather (~3,500 files, one per state and month, ~25 MB each) | Hugging Face dataset [`CropNet/CropNet`](https://huggingface.co/datasets/CropNet/CropNet), downloaded with `huggingface_hub` |
-| ISRIC SoilGrids 2.0 (Poggio et al., 2021) | Topsoil organic carbon, total nitrogen, pH at 0–5 and 5–15 cm, 5 km aggregated rasters | `https://files.isric.org/soilgrids/latest/data_aggregated/5000m/` |
-| US Census cartographic boundaries (2021, 1:20m) | County polygons and centroids | `https://www2.census.gov/geo/tiger/GENZ2021/shp/cb_2021_us_county_20m.zip` |
+| CropNet (Lin et al., 2024) | USDA county corn yields 2016-2022; WRF-HRRR daily weather (~3,500 files, one per state and month, ~25 MB each) | Hugging Face dataset [`CropNet/CropNet`](https://huggingface.co/datasets/CropNet/CropNet),<br>downloaded with `huggingface_hub` |
+| ISRIC SoilGrids 2.0 (Poggio et al., 2021) | Topsoil organic carbon, total nitrogen, pH at 0–5 and 5–15 cm, 5 km aggregated rasters | `https://files.isric.org/soilgrids/latest/`<br>`data_aggregated/5000m/` |
+| US Census cartographic boundaries (2021, 1:20m) | County polygons and centroids | `https://www2.census.gov/geo/tiger/`<br>`GENZ2021/shp/cb_2021_us_county_20m.zip` |
 
 **Licence note:** the CropNet Hugging Face page lists `cc-by-4.0` in its metadata, but its dataset card states CC BY-NC 4.0 (non-commercial). We use the data for non-commercial coursework only and treat the files in `es335_crop/` that are derived from CropNet as subject to CropNet's licence. SoilGrids is CC BY 4.0.
 
