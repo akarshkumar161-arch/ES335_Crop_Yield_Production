@@ -162,8 +162,8 @@
             </tr>
             <tr>
               <td><strong>Soil Properties</strong></td>
-              <td>ISRIC SoilGrids 250m</td>
-              <td>250m raster profiles</td>
+              <td>ISRIC SoilGrids (5 km aggregated)</td>
+              <td>5 km rasters, mean over each county polygon</td>
               <td>Nitrogen (0-5cm, 5-15cm), SOC (0-5cm, 5-15cm), pH (0-5cm, 5-15cm)</td>
             </tr>
             <tr>
@@ -179,7 +179,7 @@
       <h3 class="sub-heading">Data Quality &amp; Cleaning Checks</h3>
       <ul style="margin-left: 1.5rem; color: var(--text-muted); margin-bottom: 1rem;">
         <li><strong>Soil aggregation:</strong> SoilGrids values are averaged to each county (see <span class="inline-code">notebooks/00_data_pipeline.ipynb</span>). Soil is therefore constant for a county across years. Elevation (SRTM), soil texture and cropland masking (USDA CDL) were in the proposal but are not part of this version.</li>
-        <li><strong>Missing weather files:</strong> Four HRRR files failed to download (logged in <span class="inline-code">hrrr_skipped.csv</span>, all New Mexico 2018). They were not imputed; New Mexico has no rows in the final model table.</li>
+        <li><strong>Missing weather files:</strong> Four HRRR files failed their download check (logged in <span class="inline-code">hrrr_skipped.csv</span>: New Mexico July–September 2018 and Nevada May 2020). They were not imputed. Neither state has rows in the final model table, so no modelled county-year is affected.</li>
         <li><strong>Dry western counties:</strong> About 70 county-years (mostly California, Washington, Idaho and Texas) have under 100 mm of April–September rain. These are real values from irrigated areas, not missing data, and are kept.</li>
         <li><strong>FIPS Normalization:</strong> County FIPS codes were standardized to 5-digit strings with leading zeros to prevent cross-dataset join corruption (e.g., Autauga County, AL: <span class="inline-code">01001</span>).</li>
       </ul>
