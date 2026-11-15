@@ -1,0 +1,7 @@
+year,role,model,RMSE,MAE,R2
+2021,validation,baseline,23.83,18.77,0.61
+2021,validation,direct,25.61,20.07,0.55
+2021,validation,anomaly,20.38,15.42,0.71
+2022,final test,baseline,25.48,18.97,0.65
+2022,final test,direct,24.9,18.82,0.67
+2022,final test,anomaly,21.82,15.88,0.74

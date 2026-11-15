@@ -1,146 +1,152 @@
 # Crop Yield Prediction (ES 335: Machine Learning)
 
 [![Live Website](https://img.shields.io/badge/Live%20Website-GitHub%20Pages-brightgreen)](https://akarshkumar161-arch.github.io/ES335_Crop_Yield_Production/)
-[![License: CC BY 4.0](https://img.shields.io/badge/License-CC_BY_4.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 
-**Authors:** Akarsh Kumar (25110015) &amp; Arpit Mahajan (25110054)  
-**Institution:** Indian Institute of Technology Gandhinagar (IITGN)  
-**Live Interactive Website:** [https://akarshkumar161-arch.github.io/ES335_Crop_Yield_Production/](https://akarshkumar161-arch.github.io/ES335_Crop_Yield_Production/)
+**Authors:** Akarsh Kumar (25110015) & Arpit Mahajan (25110054), IIT Gandhinagar
+**Website (full reasoning, figures and interactive tools):** https://akarshkumar161-arch.github.io/ES335_Crop_Yield_Production/
+
+The website explains the project. This repository lets you check it: every number on the website is produced by the code and notebooks here, and every result table is in `es335_crop/`.
 
 ---
 
-## Project Overview
+## 1. Question and unit of analysis
 
-Farmers, regional planners, and crop insurers need accurate, pre-harvest estimates of county-level crop yields to optimize grain storage, manage food supply security, and underwrite insurance risk. This project investigates:
+> How well can county-level corn yield (bushels per acre) be predicted from April–September weather, topsoil chemistry and location, and how much does each group of features add over the county's own historical average?
 
-> **Core Question:** *How well can county-level corn yield (bushels per acre) be predicted from growing-season weather extremes, soil chemistry, and geographic coordinates, and how much predictive power does each feature group add over historical agricultural baselines?*
+* **One row** = one US county in one year (2017–2022), 8,691 rows, 1,898 counties, 32 states.
+* **Target** = USDA corn grain yield, bu/acre.
+* **Prediction time** = end of September: this season's observed weather, static soil and location, and the county's yields from earlier years are known; this year's yield is not.
+* Results are predictive associations, not causal effects.
 
-We evaluate tabular machine learning models (**Ridge Regression**, **Random Forest**, and **HistGradientBoosting**) across **8,691 county-year observations (2017–2022)** spanning 32 US agricultural states, benchmarking both temporal generalization (held-out 2022 season) and spatial cross-validation (leave-states-out).
+## 2. Main results
 
----
+| Model | 2021 validation RMSE | 2022 test RMSE | 2022 MAE | 2022 R² | 2022 RMSE gain vs baseline (95% state-bootstrap interval) |
+|---|---|---|---|---|---|
+| County-mean baseline | 23.83 | 25.48 | 18.97 | 0.65 | reference |
+| Direct HGB, weather+geo+soil (tuned on 2021) | 25.61 | 24.90 | 18.82 | 0.67 | +0.58 bu/ac (−2.13 to +2.98), not distinguishable from zero |
+| **Anomaly HGB, weather+geo+soil (chosen on 2021)** | **20.38** | **21.82** | **15.88** | **0.74** | **+3.66 bu/ac (+2.46 to +4.95), 14.4% lower RMSE** |
 
-## Summary of Experimental Results
+* 81% of yield variance is between counties, so the county's own average is a strong baseline. Direct models do not beat it.
+* The anomaly model predicts each year's departure from the county average using weather departures, soil and location. It beats the baseline on 2021 and again on the untouched 2022 test year.
+* Soil adds little once location or county history is known (direct HGB 2021: 26.59 → 25.61; no gain in the anomaly model; slightly worse in leave-states-out CV: 28.56 → 29.51).
+* Largest errors: low-yield counties with no earlier history (6 of the 10 worst 2022 errors) and irrigated western counties. The models shrink extreme years toward normal.
 
-### 1. Baselines (2021 Validation Set)
-* **County-Mean Baseline (4-year historical average):** RMSE = **23.83 bu/ac** | MAE = 18.77 | R² = 0.61
-* **Previous-Year Yield Baseline ($y_{t-1}$):** RMSE = **27.51 bu/ac** | MAE = 20.98 | R² = 0.48
-* **Spatial Training-Mean Baseline:** RMSE = **36.49 bu/ac** | MAE = 29.11 | R² = -0.01
+Full tables: `es335_crop/final_comparison_2021_2022.csv`, `bootstrap_ci.csv`, `ablation_val2021.csv`, `settingA_anomaly_val2021.csv`, `settingB_leave_states_out.csv`, `representative_errors_2022.csv`, `error_by_history_2022.csv`.
 
-### 2. Direct Feature Ablation (2021 Validation Set)
-| Feature Set | Model | RMSE (bu/ac) | MAE (bu/ac) | R² Score | Gain vs. County Mean |
-| :--- | :--- | :---: | :---: | :---: | :---: |
-| Weather Only | Ridge | 35.17 | 26.93 | 0.15 | -47.6% |
-| Weather Only | Random Forest | 30.78 | 24.36 | 0.35 | -29.2% |
-| Weather Only | HistGradientBoosting | 30.23 | 23.21 | 0.37 | -26.9% |
-| Weather + Geo | HistGradientBoosting | 26.59 | 21.35 | 0.51 | -11.6% |
-| **Weather + Geo + Soil** | **HistGradientBoosting** | **25.61** | **20.07** | **0.55** | **-7.5%** |
+## 3. Data access
 
-*Takeaway:* No direct model beats the county-mean baseline in 2021. Yields are very persistent within a county, and weather, location and topsoil alone do not recover that.
+All sources are public and need no account or API key. The processed tables are committed in `es335_crop/`, so **you do not need to download anything to check the analysis.** Rebuilding them from the raw sources is optional.
 
-### 3. Setting A: Anomaly Formulation (Known Counties with Weather Departures)
-By predicting departures from each county's leave-one-out historical average ($\hat{y} = \bar{y}_{\text{historical}} + \hat{\Delta}_{\text{weather}}$), every model beats the baseline (11–15% lower RMSE):
-* **Weather Only (HGB):** RMSE = **20.40 bu/ac** (+14.4% gain, R² = 0.71)
-* **Weather + Geo + Soil (HGB):** RMSE = **20.38 bu/ac** (**+14.5% gain**, R² = 0.71)
+| Source | What we use | Access |
+|---|---|---|
+| CropNet (Lin et al., 2024) | USDA county corn yields 2016–2022; WRF-HRRR daily weather (~3,500 files, one per state and month, ~25 MB each) | Hugging Face dataset [`CropNet/CropNet`](https://huggingface.co/datasets/CropNet/CropNet), downloaded with `huggingface_hub` |
+| ISRIC SoilGrids 2.0 (Poggio et al., 2021) | Topsoil organic carbon, total nitrogen, pH at 0–5 and 5–15 cm, 5 km aggregated rasters | `https://files.isric.org/soilgrids/latest/data_aggregated/5000m/` |
+| US Census cartographic boundaries (2021, 1:20m) | County polygons and centroids | `https://www2.census.gov/geo/tiger/GENZ2021/shp/cb_2021_us_county_20m.zip` |
 
-### 4. Setting B: Spatial Generalization (Leave-States-Out CV)
-Evaluating on unseen states where county history does not exist:
-* **Geo + Soil Only (No Weather):** RMSE = 32.94 bu/ac (+9.7% gain vs. spatial baseline)
-* **Weather Only:** RMSE = 29.19 bu/ac (+20.0% gain)
-* **Weather + Geo:** RMSE = **28.56 bu/ac** (**+21.7% gain**)
+**Licence note:** the CropNet Hugging Face page lists `cc-by-4.0` in its metadata, but its dataset card states CC BY-NC 4.0 (non-commercial). We use the data for non-commercial coursework only and treat the files in `es335_crop/` that are derived from CropNet as subject to CropNet's licence. SoilGrids is CC BY 4.0.
 
-### 5. Final Held-Out Test Set (2022 Season)
-Trained on 2017–2021 data using optimal hyperparameters found on 2021 validation:
-* **Test RMSE:** **24.90 bu/ac**
-* **Test MAE:** **18.82 bu/ac**
-* **Test R²:** **0.67**
-* **County-mean baseline on the same counties (2017–2021 average):** RMSE 25.48, MAE 18.97, R² 0.65, so the model is only **2.3%** better on the test year.
+**Rebuilding the tables:** run `notebooks/00_data_pipeline.ipynb` on Google Colab. The weather download takes several hours the first time; files are cached in Google Drive. Four weather files failed their download check (listed in `es335_crop/hrrr_skipped.csv`: New Mexico Jul–Sep 2018 and Nevada May 2020); neither state has rows in the final table.
 
----
+## 4. Preprocessing (exact steps, `notebooks/00_data_pipeline.ipynb`)
 
-## Interactive Deliverables (`docs/`)
+1. **Yield:** corn grain yield (bu/acre), 5-digit FIPS codes, duplicate county-year rows averaged. 2016 is kept only for the previous-year baseline.
+2. **Weather** (`county_month_features`): keep daily rows for April–September in counties that ever grew corn; average all 3 km grid cells in a county per day; convert K → °C; per month take the mean of daily tavg, tmax, tmin, relative humidity, VPD and solar radiation, the sum of daily precipitation (kg m⁻² = mm), and the count of days with county-mean tmax > 30 °C.
+3. **Season features:** pivot to one row per county-year (6 months × 8 variables = 48 columns) plus season totals of precipitation and heat days.
+4. **Soil:** mean of each SoilGrids raster over the county polygon (`all_touched=True`); missing counties filled with the state mean; SoilGrids integer scaling undone (pH ÷ 10, nitrogen ÷ 100, organic carbon ÷ 10).
+5. **Location:** county centroid latitude/longitude computed in an equal-area projection (EPSG:5070).
+6. **Join** on FIPS and year with inner joins and a row-count audit: 8,739 corn county-years → 8,691 (48 lost at the weather join, 37 of them in 2017). No missing values remain.
 
-Published live on GitHub Pages: [https://akarshkumar161-arch.github.io/ES335_Crop_Yield_Production/](https://akarshkumar161-arch.github.io/ES335_Crop_Yield_Production/)
+Model-side preprocessing (median imputation, scaling) is inside scikit-learn pipelines fit on training rows only. Anomaly-model training targets use leave-one-year-out county means, so no row's own yield is in its baseline.
 
-1. **US County Yield &amp; Prediction Error Explorer**:
-   * Interactive US map and county inspector rendering all 1,500+ agricultural counties.
-   * View toggles between Actual Yield, Prediction Error ($|y - \hat{y}|$), and Soil Improvement over weather-only models.
-   * County detail cards displaying local Soil Organic Carbon (SOC), Soil Nitrogen, Soil pH, rainfall, and summer heat days.
-   * All predictions are real out-of-sample predictions: 2021 from models trained on 2017–2020, 2022 from the tuned model trained on 2017–2021 (`scripts/export_web_data.py`).
-2. **What-If Crop Yield Simulator**:
-   * Users enter rainfall, heat days, summer temperature, soil carbon, nitrogen and pH and get a prediction from a trained Ridge model (inputs plus their squares), exported to `docs/data/simulator_params.json` and run in the browser with the same formula.
-   * It uses no county history, so it is weak on its own (2022 test RMSE 36.1, R² 0.30); it shows average associations, not causal effects.
+## 5. Splits and evaluation
 
----
+* **Time split:** train 2017–2020 (5,707 rows), validate 2021 (1,469), test 2022 (1,515). All choices (feature sets, direct vs anomaly formulation, hyperparameters) were made on 2021. 2022 was used only to report final scores and nothing was changed after seeing it. The 2022 baseline and models are refit on 2017–2021.
+* **Leave-states-out CV** (Setting B): 5-fold `GroupKFold` by state on 2017–2021, to measure transfer to unseen states.
+* **Metrics:** RMSE and MAE in bu/acre, R², and % RMSE reduction vs the county-mean baseline.
+* **Uncertainty:** 2,000 bootstrap resamples of whole states (counties in a state share weather) give 95% intervals for each model's RMSE gain over the baseline. This covers which counties are evaluated, not other weather years.
+* Random seed 42 throughout. scikit-learn is pinned to 1.6.1 because HistGradientBoosting results shift slightly between versions.
 
-## Repository Structure
+## 6. Repository structure
 
 ```
-ES335_Crop_Yield_Production/
-├── README.md                           # Project report, evaluation tables & instructions
+├── README.md
+├── requirements.txt                       # pinned versions
 ├── notebooks/
-│   ├── 00_data_pipeline.ipynb               # Builds es335_crop/*.csv from CropNet, SoilGrids, Census (TO ADD)
-│   ├── 01_model_ablation_and_tuning.ipynb   # Baseline models, feature ablations & 2022 test
-│   ├── 02_anomaly_and_spatial_cv.ipynb      # Setting A (anomaly) & Setting B (leave-states-out)
-│   └── 03_figures_and_coefficients.ipynb    # Report figures + Ridge coefficients
-├── figures/                            # PNGs written by notebook 03
-├── requirements.txt                    # Pinned dependencies
+│   ├── 00_data_pipeline.ipynb             # raw sources -> es335_crop/*.csv (Colab, slow)
+│   ├── 01_model_ablation_and_tuning.ipynb # baselines, direct-model ablation, tuning on 2021, direct 2022 test
+│   ├── 02_anomaly_and_spatial_cv.ipynb    # Setting A (anomaly models, 2021) and Setting B (leave-states-out)
+│   ├── 03_figures_and_coefficients.ipynb  # model figures, permutation importance, Ridge coefficients
+│   └── 04_eda_uncertainty_and_errors.ipynb# data plots and checks, anomaly 2022 test, bootstrap, error analysis
 ├── scripts/
-│   └── export_web_data.py              # Trains the website models and writes docs/data/*.json
-├── es335_crop/                         # Raw & processed datasets
-│   ├── corn_model_table.csv            # 8,691 rows, 62 columns (2017-2022)
-│   ├── corn_yield.csv                  # USDA NASS annual county yields
-│   ├── ablation_val2021.csv            # 2021 direct ablation benchmark table
-│   ├── settingA_anomaly_val2021.csv    # 2021 anomaly benchmark table
-│   ├── settingB_leave_states_out.csv   # 5-fold spatial CV results
-│   └── ridge_coefficients.csv          # Standardized Ridge coefficients
-└── docs/                               # GitHub Pages interactive web application
-    ├── index.html                      # 10 rubric sections + interactive tools
-    ├── style.css                       # Responsive academic stylesheet
-    ├── app.js                          # Map explorer & what-if simulator logic
-    └── data/                           # Web data artifacts (JSON)
-        ├── ablation_metrics.json
-        ├── counties_summary.json
-        ├── state_errors.json
-        └── simulator_params.json
+│   └── export_web_data.py                 # trains the website models, writes docs/data/*.json, copies figures
+├── es335_crop/                            # processed data and all result tables
+│   ├── corn_model_table.csv               # modelling table: 8,691 rows x 62 columns
+│   ├── corn_yield.csv                     # USDA county corn yields 2016-2022
+│   ├── weather_county_month.csv           # county-month weather, Apr-Sep 2017-2022
+│   ├── hrrr_skipped.csv                   # weather files that failed to download
+│   ├── data_quality_summary.csv           # row counts and quality checks
+│   ├── ablation_val2021.csv               # direct models, 2021
+│   ├── settingA_anomaly_val2021.csv       # anomaly models, 2021
+│   ├── settingB_leave_states_out.csv      # leave-states-out CV
+│   ├── final_comparison_2021_2022.csv     # baseline / direct / anomaly, 2021 and 2022
+│   ├── bootstrap_ci.csv                   # 95% state-bootstrap intervals
+│   ├── representative_errors_2022.csv     # largest and typical 2022 errors
+│   ├── error_by_history_2022.csv          # 2022 error by years of county history
+│   └── ridge_coefficients.csv             # standardized Ridge coefficients
+├── figures/                               # PNGs written by notebooks 03 and 04
+└── docs/                                  # GitHub Pages website
+    ├── index.html, style.css, app.js
+    ├── figures/                           # copies of figures/ (Pages serves only docs/)
+    └── data/                              # JSON written by scripts/export_web_data.py
 ```
 
----
+## 7. Setup and run
 
-## Reproduction Guide
-
-### 1. Environment Setup
 ```bash
 git clone https://github.com/akarshkumar161-arch/ES335_Crop_Yield_Production.git
 cd ES335_Crop_Yield_Production
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
 
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt   # scikit-learn 1.6.1 reproduces the reported numbers exactly
-```
-
-### 2. Running Analysis & Generating Deliverables
-```bash
-# Notebooks run locally (they read es335_crop/) or on Colab (they mount Drive)
+# Run in order (each reads es335_crop/ and writes its tables/figures there and to figures/):
 jupyter notebook notebooks/
+#   01_model_ablation_and_tuning.ipynb     -> 2021 ablation, tuning, direct 2022 test (RMSE 24.90)
+#   02_anomaly_and_spatial_cv.ipynb        -> Setting A (2021 RMSE 20.38) and Setting B
+#   03_figures_and_coefficients.ipynb      -> figures 01-06, ridge_coefficients.csv
+#   04_eda_uncertainty_and_errors.ipynb    -> figures 07-09, anomaly 2022 test (RMSE 21.82), bootstrap, error tables
 
-# Train the website models and regenerate docs/data/*.json (~10 s)
+# Rebuild the website data (about 10 s) and preview the site
 python scripts/export_web_data.py
-
-# Test website locally
-python3 -m http.server 8000 --directory docs
-# Open http://localhost:8000 in your web browser
+python3 -m http.server 8000 --directory docs     # open http://localhost:8000
 ```
 
----
+Notebooks also run on Google Colab: they detect Colab and read from `MyDrive/es335_crop`. `00_data_pipeline.ipynb` is Colab-only.
 
-## Academic Rubric Alignment (ES 335)
-This project strictly adheres to the ES 335 assessment criteria:
-* **Framing & Scope (10 pts):** Predict county corn yield at end of season; non-causal predictive framing.
-* **Data Understanding (10 pts):** Multi-source integration (CropNet USDA yields and WRF-HRRR weather, ISRIC SoilGrids, US Census TIGER). Elevation, soil texture and CDL cropland masking from the proposal are not included in this version.
-* **Preprocessing & Leakage Prevention (10 pts):** Imputation/scaling inside pipelines; leave-one-out historical means.
-* **Baselines & Candidate Methods (15 pts):** Meaningful historical county baseline compared with regularized linear and tree ensembles.
-* **Evaluation Design (20 pts):** Temporal splits (2017–2020 train, 2021 val, 2022 test) and spatial leave-states-out CV.
-* **Results & Limitations (10 pts):** Outlier state analysis (irrigated West vs. rainfed Midwest), omitted variable bias.
-* **Reproducibility (5 pts):** Automated scripts, documented environments, publicly accessible data.
-* **Interactive Deliverable & Interaction (15 pts):** GitHub Pages site with County Map Explorer and What-If Simulator.
+## 8. Extra experiments
+
+* **Previous-year baseline** (2021: RMSE 27.51) is worse than the county mean (23.83), so we use the county mean.
+* **Leave-states-out CV** (Setting B): best is weather+geo HGB, RMSE 28.56 vs 36.49 for the training mean; adding soil makes it worse (29.51).
+* **What-if simulator model:** Ridge on six inputs and their squares, trained 2017–2021 (2021 RMSE 36.61, R² 0.08; 2022 RMSE 36.12, R² 0.30). It uses no county history and is shown only to illustrate learned associations.
+
+## 9. Contributions
+
+* **Akarsh Kumar (25110015):** Extracting the trained data for use outside the notebooks, and building the website (layout, county map explorer and what-if simulator). Worked jointly on the final models. 
+* **Arpit Mahajan (25110054):** Data processing (building the county-year table from the raw yield, weather, soil and boundary data) and the baseline models (county mean, previous-year and training-mean). Worked jointly on the final models.
+
+## 10. AI-use disclosure
+
+* AI was used to plan and give the direction on how to proceed with the project, along with writing code in few parts.
+
+* AI was also used to review the repository against the proposal and rubric.
+
+* All of its code was run, and every reported number comes from that code.
+* We reviewed all AI-written code and text and are responsible for the content.
+
+## 11. Citations
+
+* Lin, F., Guillot, K., Crawford, S., Zhang, Y., Yuan, X., & Tzeng, N.-F. (2024). An Open and Large-Scale Dataset for Multi-Modal Climate Change-aware Crop Yield Predictions. *Proceedings of the 30th ACM SIGKDD Conference on Knowledge Discovery and Data Mining (KDD '24)*, 5375–5386. https://doi.org/10.1145/3637528.3671536. Dataset: https://huggingface.co/datasets/CropNet/CropNet
+* Poggio, L., de Sousa, L. M., Batjes, N. H., Heuvelink, G. B. M., Kempen, B., Ribeiro, E., & Rossiter, D. (2021). SoilGrids 2.0: producing soil information for the globe with quantified spatial uncertainty. *SOIL*, 7, 217–240. https://doi.org/10.5194/soil-7-217-2021
+* Dowell, D. C., et al. (2022). The High-Resolution Rapid Refresh (HRRR): An Hourly Updating Convection-Allowing Forecast Model. Part I: Motivation and System Description. *Weather and Forecasting*, 37(8). (Source model of the CropNet weather data.)
+* U.S. Census Bureau (2021). Cartographic Boundary Files: Counties, 1:20,000,000. https://www.census.gov/geographies/mapping-files/time-series/geo/cartographic-boundary.html
+* Pedregosa, F., et al. (2011). Scikit-learn: Machine Learning in Python. *Journal of Machine Learning Research*, 12, 2825–2830.

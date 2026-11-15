@@ -8,7 +8,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // Global State
   const state = {
     year: "2021",
-    viewMode: "actual", // 'actual', 'error', 'soil_imp'
+    viewMode: "error", // 'actual', 'error', 'gain', 'soil_imp'
+    model: "anom",     // 'anom' (anomaly model, main result), 'full' (direct HGB), 'base' (county mean)
     selectedState: "ALL",
     countiesData: null,
     stateErrorsData: null,
@@ -76,6 +77,19 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     }
 
+    // Model Selector
+    const modelSel = document.getElementById("select-model");
+    if (modelSel && !modelSel.dataset.bound) {
+      modelSel.dataset.bound = "1";
+      modelSel.addEventListener("change", (e) => {
+        state.model = e.target.value;
+        updateMapLegend();
+        renderMap();
+        if (state.activeCounty) inspectCounty(state.activeCounty);
+        updateStateStatsCard();
+      });
+    }
+
     // View Mode Selector
     const modeSel = document.getElementById("select-view-mode");
     if (modeSel) {
@@ -112,6 +126,13 @@ document.addEventListener("DOMContentLoaded", () => {
     return { x, y };
   }
 
+  const MODEL_LABEL = { anom: "Anomaly model", full: "Direct HGB", base: "County-mean baseline" };
+  function predOf(c) { return state.model === "anom" ? c.pred_anom : state.model === "full" ? c.pred_full : c.baseline; }
+  function errOf(c)  { return state.model === "anom" ? c.err_anom  : state.model === "full" ? c.err_full  : c.err_base; }
+  // > 0: the selected model's absolute error is smaller than the baseline's
+  function gainOf(c) { return Math.abs(c.err_base) - Math.abs(errOf(c)); }
+  function signed(v) { return `${v > 0 ? "+" : ""}${v}`; }
+
   function getColorForCounty(c) {
     if (state.viewMode === "actual") {
       // Scale: 60 bu/acre (red) -> 160 (yellow) -> 230 (deep green)
@@ -133,12 +154,20 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     } else if (state.viewMode === "error") {
       // Residual absolute error: 0 (green) -> 20 (yellow) -> 50+ (red)
-      const absErr = Math.abs(c.err_full);
+      const absErr = Math.abs(errOf(c));
       const t = Math.min(1.0, absErr / 45.0);
       const r = Math.round(40 + t * 200);
       const g = Math.round(160 * (1 - t * 0.7));
       const b = Math.round(50 * (1 - t));
       return `rgb(${r}, ${g}, ${b})`;
+    } else if (state.viewMode === "gain") {
+      // Better than baseline (green) / worse (red), saturating at 20 bu/ac
+      const g = gainOf(c);
+      const t = Math.min(1.0, Math.abs(g) / 20.0);
+      if (Math.abs(g) < 0.5) return "#cbd5e1";
+      return g > 0
+        ? `rgb(${Math.round(200 - t * 170)}, ${Math.round(210 - t * 60)}, ${Math.round(200 - t * 150)})`
+        : `rgb(${Math.round(230 - t * 30)}, ${Math.round(190 - t * 160)}, ${Math.round(190 - t * 160)})`;
     } else {
       // Soil Improvement: negative (red/orange) -> zero (gray) -> positive (bright green)
       const imp = c.soil_improvement;
@@ -164,10 +193,15 @@ document.addEventListener("DOMContentLoaded", () => {
       minLabel.innerText = "≤ 70 bu/ac (Low)";
       maxLabel.innerText = "≥ 220 bu/ac (High)";
     } else if (state.viewMode === "error") {
-      title.innerText = "Prediction Error |Actual - Pred|";
+      title.innerText = `${MODEL_LABEL[state.model]}: |Actual − Predicted|`;
       bar.className = "legend-bar error-scale";
       minLabel.innerText = "0 bu/ac (Accurate)";
       maxLabel.innerText = "≥ 45 bu/ac (High Error)";
+    } else if (state.viewMode === "gain") {
+      title.innerText = `${MODEL_LABEL[state.model]} vs baseline (green = smaller error)`;
+      bar.className = "legend-bar gain-scale";
+      minLabel.innerText = "≥ 20 bu/ac worse";
+      maxLabel.innerText = "≥ 20 bu/ac better";
     } else {
       title.innerText = "Soil Improvement Over Weather-Only";
       bar.className = "legend-bar yield-scale";
@@ -219,8 +253,8 @@ document.addEventListener("DOMContentLoaded", () => {
         >
           <title>${c.state_name} (${c.state}) | FIPS ${c.fips}
 Actual: ${c.actual} bu/ac
-Pred: ${c.pred_full} bu/ac
-Error: ${c.err_full} bu/ac</title>
+${MODEL_LABEL[state.model]}: ${predOf(c)} bu/ac
+Error: ${errOf(c)} bu/ac</title>
         </circle>
       `;
     });
@@ -267,12 +301,22 @@ Error: ${c.err_full} bu/ac</title>
     if (title) title.innerText = `County ${c.fips}, ${c.state_name}`;
     if (fips) fips.innerText = `FIPS: ${c.fips} | Lat: ${c.lat}°, Lon: ${c.lon}°`;
     if (actual) actual.innerText = `${c.actual} bu/ac`;
-    if (pred) pred.innerText = `${c.pred_full} bu/ac`;
+    const predLabel = document.getElementById("insp-pred-label");
+    if (predLabel) predLabel.innerText = `Predicted (${MODEL_LABEL[state.model]})`;
+    if (pred) pred.innerText = `${predOf(c)} bu/ac`;
     if (base) base.innerText = `${c.baseline} bu/ac`;
     if (err) {
-      err.innerText = `${c.err_full > 0 ? '+' : ''}${c.err_full} bu/ac`;
-      err.style.color = Math.abs(c.err_full) <= 15 ? "#166534" : "#b91c1c";
+      const e = errOf(c);
+      err.innerText = `${signed(e)} bu/ac`;
+      err.style.color = Math.abs(e) <= 15 ? "#166534" : "#b91c1c";
     }
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.innerText = v; };
+    set("insp-err-anom", `${signed(c.err_anom)} bu/ac`);
+    set("insp-err-full", `${signed(c.err_full)} bu/ac`);
+    set("insp-err-base", `${signed(c.err_base)} bu/ac`);
+    set("insp-history", c.history_years === 0
+      ? "none: baseline falls back to the state average"
+      : `${c.history_years} earlier year${c.history_years > 1 ? "s" : ""}`);
     if (errW) errW.innerText = `${c.err_w > 0 ? '+' : ''}${c.err_w} bu/ac`;
     if (soilImp) {
       soilImp.innerText = `${c.soil_improvement >= 0 ? '+' : ''}${c.soil_improvement} bu/ac`;
@@ -302,16 +346,18 @@ Error: ${c.err_full} bu/ac</title>
       if (cardState) cardState.innerText = `All States (${allCounties.length} Counties)`;
       if (cardYield) cardYield.innerText = `${avgY} bu/ac`;
       const m = isTestYear ? state.metricsData.final_test_2022 : state.metricsData.val_2021;
-      const full = m.full_model;
-      if (cardRmse) cardRmse.innerText = `${full.rmse.toFixed(2)} bu/ac (${isTestYear ? "Test" : "Val"})`;
-      if (cardGain) cardGain.innerText = `${full.gain_pct_vs_baseline > 0 ? "+" : ""}${full.gain_pct_vs_baseline}% vs county-mean baseline`;
+      const sel = state.model === "anom" ? m.anomaly_model : state.model === "full" ? m.full_model : m.county_mean_baseline;
+      if (cardRmse) cardRmse.innerText = `${sel.rmse.toFixed(2)} bu/ac (${MODEL_LABEL[state.model]}, ${isTestYear ? "test" : "validation"})`;
+      if (cardGain) cardGain.innerText = state.model === "base" ? "reference" : `${signed(sel.gain_pct_vs_baseline)}% vs county-mean baseline`;
     } else {
       const found = yearStats.find(s => s.state === state.selectedState);
       if (found) {
         if (cardState) cardState.innerText = `${found.state_name} (${found.counties_count} Counties)`;
         if (cardYield) cardYield.innerText = `${found.avg_yield} bu/ac`;
-        if (cardRmse) cardRmse.innerText = `${found.rmse_full} bu/ac`;
-        if (cardGain) cardGain.innerText = `${found.rmse_gain_pct > 0 ? '+' : ''}${found.rmse_gain_pct}% vs Base`;
+        const r = state.model === "anom" ? found.rmse_anom : state.model === "full" ? found.rmse_full : found.rmse_base;
+        const g = state.model === "anom" ? found.rmse_gain_pct_anom : state.model === "full" ? found.rmse_gain_pct : 0;
+        if (cardRmse) cardRmse.innerText = `${r} bu/ac (${MODEL_LABEL[state.model]})`;
+        if (cardGain) cardGain.innerText = state.model === "base" ? "reference" : `${signed(g)}% vs baseline`;
       }
     }
   }
@@ -506,17 +552,19 @@ Error: ${c.err_full} bu/ac</title>
     const tbody = document.getElementById("table-state-errors-body");
     if (!tbody) return;
 
-    // Show top 12 hardest and top 6 most accurate states from 2021
-    const y2021 = state.stateErrorsData.filter(s => s.year === 2021);
-    tbody.innerHTML = y2021.slice(0, 15).map(s => `
+    // 2022 test year, states with 5+ counties, sorted by anomaly-model RMSE (hardest first)
+    const rows = state.stateErrorsData.filter(s => s.year === 2022 && s.counties_count >= 5)
+      .sort((a, b) => b.rmse_anom - a.rmse_anom);
+    tbody.innerHTML = rows.map(s => `
       <tr>
         <td><strong>${s.state_name}</strong> (${s.state})</td>
         <td><span class="badge ${s.is_corn_belt ? 'badge-success' : 'badge-info'}">${s.region}</span></td>
         <td>${s.counties_count}</td>
         <td>${s.avg_yield.toFixed(1)} bu/ac</td>
-        <td><strong>${s.rmse_full.toFixed(2)}</strong></td>
+        <td><strong>${s.rmse_anom.toFixed(2)}</strong></td>
+        <td>${s.rmse_full.toFixed(2)}</td>
         <td>${s.rmse_base.toFixed(2)}</td>
-        <td><span class="badge ${s.rmse_gain_pct >= 0 ? 'badge-success' : 'badge-danger'}">${s.rmse_gain_pct > 0 ? '+' : ''}${s.rmse_gain_pct}%</span></td>
+        <td><span class="badge ${s.rmse_gain_pct_anom >= 0 ? 'badge-success' : 'badge-danger'}">${signed(s.rmse_gain_pct_anom)}%</span></td>
       </tr>
     `).join("");
   }

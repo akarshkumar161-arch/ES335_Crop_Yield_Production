@@ -27,6 +27,7 @@
         <a href="#interactive-explorer">County Explorer</a>
         <a href="#interactive-simulator">Yield Simulator</a>
         <a href="#errors">Errors</a>
+        <a href="#limitations">Limitations</a>
         <a href="#reproduction">Reproduction</a>
       </nav>
       <div class="header-links">
@@ -61,8 +62,8 @@
           <span class="meta-value">CropNet (USDA + WRF-HRRR) &amp; ISRIC SoilGrids</span>
         </div>
         <div class="meta-item">
-          <span class="meta-label">Final 2022 Test Score</span>
-          <span class="meta-value">RMSE 24.90 bu/ac (county-mean baseline 25.48) | R² 0.67</span>
+          <span class="meta-label">Final 2022 Test Score (anomaly model)</span>
+          <span class="meta-value">RMSE 21.82 bu/ac vs county-mean baseline 25.48 (14.4% lower) | R² 0.74</span>
         </div>
       </div>
     </div>
@@ -70,6 +71,20 @@
 
   <!-- Main Document Container -->
   <main class="container">
+
+    <section class="paper-section" id="summary">
+      <span class="section-tag">Summary</span>
+      <h2 class="section-heading">The Answer in Brief</h2>
+      <ul class="summary-list">
+        <li><strong>Question:</strong> how well can a county's corn yield (bu/acre) be predicted from April–September weather, topsoil chemistry and location, and how much does each group add over the county's own historical average?</li>
+        <li><strong>Data:</strong> 8,691 county-years (1,898 counties, 32 states, 2017–2022) built from CropNet (USDA yields + WRF-HRRR weather), ISRIC SoilGrids and US Census boundaries.</li>
+        <li><strong>Key fact about the data:</strong> 81% of yield variance is <em>between</em> counties, so a county's own average is a very strong baseline (Section 2).</li>
+        <li><strong>Direct models</strong> that predict yield from weather, soil and location do <em>not</em> beat that baseline (2021: 25.61 vs 23.83 RMSE; 2022: 24.90 vs 25.48, within noise).</li>
+        <li><strong>The anomaly model</strong> (county average + a weather-driven correction), chosen on 2021, beats the baseline on the untouched 2022 test year: <strong>RMSE 21.82 vs 25.48</strong>, 95% bootstrap interval for the gain +2.5 to +5.0 bu/acre.</li>
+        <li><strong>Soil adds little</strong> once location or county history is known. Weather departures carry the useful signal.</li>
+        <li><strong>Main failures:</strong> low-yield and newly reported counties (mostly in the Southeast) and irrigated western counties. One test year only; results are associations, not causes.</li>
+      </ul>
+    </section>
 
     <!-- Section 1: Problem Formulation & Scope -->
     <section class="paper-section" id="problem">
@@ -92,15 +107,15 @@
         <strong>One row represents:</strong> Exactly one US county in one calendar year (e.g., Story County, Iowa in 2021).
       </p>
       <p>
-        <strong>Target Variable:</strong> Corn grain yield, measured continuously in <strong>bushels per acre (bu/ac)</strong>, reported by the USDA National Agricultural Statistics Service (NASS). Across our multi-year dataset, county yields range from catastrophic drought lows (~40 bu/ac) to irrigated highs (>230 bu/ac), with a national training average of <strong>165.4 bu/ac</strong>.
+        <strong>Target Variable:</strong> Corn grain yield, measured continuously in <strong>bushels per acre (bu/ac)</strong>, reported by the USDA National Agricultural Statistics Service (NASS). County yields range from 19.8 to 270.2 bu/ac (1st–99th percentile: 55–226), with a 2017–2020 training average of <strong>157.8 bu/ac</strong>.
       </p>
       <p>
-        <strong>Prediction Timeframe:</strong> Predictions are made at the close of the growing season (end of September), utilizing all accumulated April–September weather reanalysis and static soil properties, immediately prior to autumn harvest reporting.
+        <strong>Prediction Timeframe:</strong> Predictions are made at the end of the growing season (end of September), when all April–September weather is known, before USDA publishes the county's final yield. Available at that time: this season's weather, static soil and location, and the county's yields from earlier years. Not available: this year's yield, and (in a real deployment) observed weather earlier in the season. Because we use observed weather, our results describe what is possible with perfect knowledge of the season, not a pre-season forecast.
       </p>
 
       <h3 class="sub-heading">Scientific Scope &amp; Non-Causal Framing</h3>
       <p>
-        We treat this strictly as a predictive task. Observational coefficients or tree split importances reflect empirical associations rather than direct causal interventions. For example, while low soil organic carbon is strongly correlated with lower corn yields in rain-deficit years, increasing organic carbon artificially cannot guarantee yield increases without considering unobserved factors such as fertilizer rates, drainage tile infrastructure, and seed genetics.
+        We treat this strictly as a predictive task. Observational coefficients or tree split importances reflect empirical associations rather than direct causal interventions. For example, across counties higher topsoil organic carbon goes with <em>lower</em> yield (Spearman −0.19), because high-carbon soils are concentrated in cooler, wetter northern counties; that does not mean adding carbon lowers yield. Fertilizer, drainage, irrigation and seed choices are not observed at all.
       </p>
     </section>
 
@@ -130,9 +145,9 @@
           <div class="stat-sub">Corn Belt, Plains, South, West</div>
         </div>
         <div class="stat-card">
-          <div class="stat-num">CC-BY-4.0</div>
-          <div class="stat-desc">Data Licensing</div>
-          <div class="stat-sub">CropNet Hugging Face</div>
+          <div class="stat-num">81%</div>
+          <div class="stat-desc">Yield Variance Between Counties</div>
+          <div class="stat-sub">Only 19% is year-to-year</div>
         </div>
       </div>
 
@@ -150,7 +165,7 @@
           <tbody>
             <tr>
               <td><strong>Crop Yield</strong></td>
-              <td>USDA NASS QuickStats</td>
+              <td>USDA NASS county estimates, via CropNet (Hugging Face)</td>
               <td>County-level annual</td>
               <td>Corn yield target (bu/ac)</td>
             </tr>
@@ -158,7 +173,7 @@
               <td><strong>Weather &amp; Climate</strong></td>
               <td>CropNet (WRF-HRRR Reanalysis)</td>
               <td>Hourly 3km &times; 3km grid</td>
-              <td>Monthly tmin, tmax, tavg, precip, rh, vpd, srad, heat_days (&gt;30°C)</td>
+              <td>Monthly (Apr–Sep) tmin, tmax, tavg, precip, rh, vpd, srad, heat_days (&gt;30°C); season totals of precip and heat days</td>
             </tr>
             <tr>
               <td><strong>Soil Properties</strong></td>
@@ -176,11 +191,47 @@
         </table>
       </div>
 
+      <h3 class="sub-heading">Access</h3>
+      <p>
+        All sources are public and need no credentials. CropNet is on Hugging Face (<span class="inline-code">CropNet/CropNet</span>; its metadata says CC-BY-4.0 but its card says CC BY-NC 4.0, so we treat it as non-commercial); we download only its USDA corn files and about 3,500 WRF-HRRR daily weather files (one per state and month, roughly 25 MB each), which takes several hours on Colab. SoilGrids rasters come from ISRIC's public file server and county boundaries from the US Census. The finished tables are committed to the repository, so the analysis can be checked without repeating the download. See the README for links.
+      </p>
+
+      <h3 class="sub-heading">What the Data Looks Like</h3>
+      <figure class="fig">
+        <img src="figures/07_yield_by_year_and_rows_by_state.png" alt="Box plots of yield by year and bar chart of rows per state" loading="lazy">
+        <figcaption><strong>Figure 1.</strong> Left: yield by year; 2022 has the widest spread (a dry year in the western Plains). Right: rows per state; the table is dominated by Corn Belt states (IA, IL, IN, OH).</figcaption>
+      </figure>
+      <figure class="fig">
+        <img src="figures/08_yield_vs_key_variables.png" alt="Scatter plots of yield against rainfall, heat days, July max temperature, soil carbon, pH and latitude" loading="lazy">
+        <figcaption><strong>Figure 2.</strong> Yield against key variables, with the median per bin in black. Yield falls with July heat and heat days and peaks at moderate rainfall, pH around 6.3 and latitude around 41–42°. Each relationship is noisy on its own because counties differ in many ways at once.</figcaption>
+      </figure>
+
+      <div class="callout">
+        <h4>Why the county average is a strong baseline</h4>
+        <p>
+          Among the 1,762 counties observed in two or more years, <strong>81% of yield variance is between counties</strong> and only 19% is year-to-year within a county (typical within-county standard deviation: 16.3 bu/acre). Knowing <em>which county</em> it is explains most of the yield; weather can only explain the smaller year-to-year part. This shaped our methods (Section 3).
+        </p>
+      </div>
+
       <h3 class="sub-heading">Data Quality &amp; Cleaning Checks</h3>
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead><tr><th>Check</th><th>Result</th></tr></thead>
+          <tbody>
+            <tr><td>USDA corn county-years 2017–2022 (before joins)</td><td>8,739</td></tr>
+            <tr><td>Rows after joining weather, soil and location</td><td>8,691 (48 lost at the weather join, 37 of them in 2017)</td></tr>
+            <tr><td>Missing values in the final table</td><td>0</td></tr>
+            <tr><td>Counties observed in only one year / in all six years</td><td>136 / 757</td></tr>
+            <tr><td>Duplicate county-year rows in the USDA files</td><td>Averaged into one row per county-year (<span class="inline-code">00_data_pipeline</span>, section 2)</td></tr>
+            <tr><td>Yield range</td><td>19.8 to 270.2 bu/acre; no values removed</td></tr>
+          </tbody>
+        </table>
+      </div>
       <ul style="margin-left: 1.5rem; color: var(--text-muted); margin-bottom: 1rem;">
         <li><strong>Soil aggregation:</strong> SoilGrids values are averaged to each county (see <span class="inline-code">notebooks/00_data_pipeline.ipynb</span>). Soil is therefore constant for a county across years. Elevation (SRTM), soil texture and cropland masking (USDA CDL) were in the proposal but are not part of this version.</li>
         <li><strong>Missing weather files:</strong> Four HRRR files failed their download check (logged in <span class="inline-code">hrrr_skipped.csv</span>: New Mexico July–September 2018 and Nevada May 2020). They were not imputed. Neither state has rows in the final model table, so no modelled county-year is affected.</li>
         <li><strong>Dry western counties:</strong> About 70 county-years (mostly California, Washington, Idaho and Texas) have under 100 mm of April–September rain. These are real values from irrigated areas, not missing data, and are kept.</li>
+        <li><strong>Counties with no history:</strong> 31 counties in the 2022 test year have no earlier yield in our data, so the county-mean baseline (and the anomaly model) fall back to the state average for them. These turn out to be the hardest cases (Section 7).</li>
         <li><strong>FIPS Normalization:</strong> County FIPS codes were standardized to 5-digit strings with leading zeros to prevent cross-dataset join corruption (e.g., Autauga County, AL: <span class="inline-code">01001</span>).</li>
       </ul>
     </section>
@@ -192,6 +243,19 @@
 
       <p>
         Careless preprocessing is the leading cause of overoptimistic performance in spatial and temporal machine learning. We instituted strict guardrails to guarantee zero test-data leakage:
+      </p>
+
+      <h3 class="sub-heading">Transformations, in Order (notebook 00)</h3>
+      <ol class="plain-list">
+        <li><strong>Yield:</strong> keep corn grain yield in bu/acre; build 5-digit FIPS codes; average duplicate county-year rows.</li>
+        <li><strong>Weather:</strong> keep daily rows for April–September in counties that ever grew corn; average all 3 km grid cells in a county for each day; convert K to °C; then per month take the mean of daily temperature, humidity, VPD and radiation, the <em>sum</em> of daily rainfall, and the number of days whose maximum exceeded 30 °C. Averaging over space before time keeps one county-day per row.</li>
+        <li><strong>Season features:</strong> pivot to one row per county-year (6 months × 8 variables = 48 columns) and add season totals of rainfall and heat days. We keep months separate because the same rain or heat matters differently at planting and at pollination (July).</li>
+        <li><strong>Soil:</strong> mean of each 5 km SoilGrids raster over the county polygon (0–5 and 5–15 cm; organic carbon, total nitrogen, pH); undo SoilGrids' integer scaling (pH ÷10, nitrogen ÷100, carbon ÷10); fill any missing county with its state mean. Soil does not change over time and is not computed from yield, so this fill cannot leak the target.</li>
+        <li><strong>Location:</strong> county centroid latitude and longitude, computed in an equal-area projection.</li>
+        <li><strong>Join</strong> on FIPS and year with inner joins, checking row counts after each step (table above).</li>
+      </ol>
+      <p>
+        No rows are removed for being unusual, and no target-derived feature (production, previous-year yield) is given to any model. Details: <a href="https://github.com/akarshkumar161-arch/ES335_Crop_Yield_Production/blob/main/notebooks/00_data_pipeline.ipynb" target="_blank" class="inline-code">notebooks/00_data_pipeline.ipynb</a>.
       </p>
 
       <div class="callout warning">
@@ -215,7 +279,7 @@
         \hat{y}_{c, t} = \bar{y}_{\text{historical}, c} + f_{\theta}\left(X_{\text{weather anomaly}}, X_{\text{soil}}, X_{\text{geo}}\right)
       \]
       <p>
-        Where \(\bar{y}_{\text{historical}, c}^{(-t)}\) represents the county's average yield over all training years excluding year \(t\). This decomposition allows the machine learning model to focus its capacity on weather departures (e.g., rainfall deficits, severe heatwaves) rather than re-learning that Iowa inherently produces more corn than southern Texas.
+        Where \(\bar{y}_{\text{historical}, c}^{(-t)}\) represents the county's average yield over all training years excluding year \(t\). This decomposition allows the machine learning model to focus its capacity on weather departures (e.g., rainfall deficits, severe heatwaves) rather than re-learning that Iowa inherently produces more corn than southern Texas. It follows directly from the variance split in Section 2: the county mean handles the 81% that is between counties, and the model only has to explain the 19% that changes from year to year. Weather features are entered as departures from the county's own normal for the same reason. For a county with no earlier years the correction is set to zero and the prediction is the state average.
       </p>
     </section>
 
@@ -263,6 +327,12 @@
               <td>Bootstrap aggregation of 300 deep decision trees with randomized feature subsampling.</td>
               <td>Captures non-linear thresholds and interactions; robust to outliers and colinear weather variables.</td>
             </tr>
+            <tr class="highlight-row">
+              <td><strong>Anomaly model (Setting A)</strong></td>
+              <td>Baseline + HGB correction</td>
+              <td>County mean of training years plus an HGB prediction of this year's departure from it, using weather departures, soil and location.</td>
+              <td>Assumes a county's normal level is stable and weather explains departures from it. Needs at least one earlier year for the county.</td>
+            </tr>
             <tr>
               <td><strong>HistGradientBoosting (HGB)</strong></td>
               <td>Boosted Ensembles</td>
@@ -305,6 +375,16 @@
           <div class="stat-sub">5 Folds Across 32 States</div>
         </div>
       </div>
+
+      <h3 class="sub-heading">Selection Rule, Fixed Before Testing</h3>
+      <p>
+        All model choices (feature sets, the direct vs anomaly formulation, hyperparameters) were made on 2021. 2022 was used only to report final scores: the tuned direct HGB (notebook 01) and the anomaly HGB with weather+geo+soil, which was the best 2021 model (notebook 02, tested in notebook 04). Nothing was changed after seeing 2022. Leave-states-out cross-validation uses only 2017–2021 and answers a different question: how well the models transfer to states never seen in training.
+      </p>
+
+      <h3 class="sub-heading">Uncertainty</h3>
+      <p>
+        With one test year, small differences can be luck. We estimate a 95% interval for each model's RMSE gain over the baseline by resampling <em>whole states</em> 2,000 times (counties in the same state share weather, so resampling single counties would make intervals too narrow). This measures uncertainty from which counties are evaluated, not from year-to-year change in weather, which one test year cannot measure.
+      </p>
 
       <h3 class="sub-heading">Evaluation Metrics</h3>
       <ul style="margin-left: 1.5rem; color: var(--text-muted); line-height: 1.8;">
@@ -472,27 +552,37 @@
         </table>
       </div>
 
+      <p>Details: <a href="https://github.com/akarshkumar161-arch/ES335_Crop_Yield_Production/blob/main/notebooks/01_model_ablation_and_tuning.ipynb" target="_blank" class="inline-code">notebooks/01_model_ablation_and_tuning.ipynb</a>, <a href="https://github.com/akarshkumar161-arch/ES335_Crop_Yield_Production/blob/main/notebooks/02_anomaly_and_spatial_cv.ipynb" target="_blank" class="inline-code">notebooks/02_anomaly_and_spatial_cv.ipynb</a>.</p>
+      <figure class="fig">
+        <img src="figures/01_ablation_rmse.png" alt="Bar chart of validation RMSE by feature set and model" loading="lazy">
+        <figcaption><strong>Figure 3.</strong> 2021 validation RMSE of the direct models by feature set. Every direct model is above the county-mean baseline (dashed line). For the tree models (RF, HGB), adding location helps most and adding soil helps a little more; Ridge, being linear, cannot use latitude and longitude well.</figcaption>
+      </figure>
+
       <h3 class="sub-heading">Final 2022 Test Set Verification</h3>
       <p>
         Following hyperparameter tuning on the 2021 validation set (optimal: <span class="inline-code">learning_rate=0.1, max_iter=500, min_samples_leaf=20</span>), we trained the model on 2017–2021 and evaluated on the untouched <strong>2022 test set (1,515 counties)</strong>. The county-mean baseline (2017–2021 average) scores RMSE 25.48, MAE 18.97, R² 0.65 on the same counties, so the model's gain on the test year is small (2.3% lower RMSE):
       </p>
-      <div class="stat-cards-grid">
-        <div class="stat-card highlight">
-          <div class="stat-num">24.90</div>
-          <div class="stat-desc">Test RMSE (bu/ac)</div>
-          <div class="stat-sub">Baseline: 25.48</div>
-        </div>
-        <div class="stat-card highlight">
-          <div class="stat-num">18.82</div>
-          <div class="stat-desc">Test MAE (bu/ac)</div>
-          <div class="stat-sub">Baseline: 18.97</div>
-        </div>
-        <div class="stat-card highlight">
-          <div class="stat-num">0.67</div>
-          <div class="stat-desc">Test R² Score</div>
-          <div class="stat-sub">Baseline: 0.65</div>
-        </div>
+      <p>
+        The anomaly model, chosen on 2021, was then trained on 2017–2021 and scored once on 2022 with the same settings as in 2021:
+      </p>
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead><tr><th>Model</th><th>2021 validation RMSE</th><th>2022 test RMSE</th><th>2022 MAE</th><th>2022 R²</th><th>2022 gain vs baseline (95% interval)</th></tr></thead>
+          <tbody>
+            <tr><td>County-mean baseline</td><td>23.83</td><td>25.48</td><td>18.97</td><td>0.65</td><td>reference</td></tr>
+            <tr><td>Direct HGB, weather+geo+soil (tuned)</td><td>25.61</td><td>24.90</td><td>18.82</td><td>0.67</td><td><span class="badge badge-info">+0.6 bu/ac (−2.1 to +3.0)</span> not distinguishable</td></tr>
+            <tr class="highlight-row"><td><strong>Anomaly HGB, weather+geo+soil</strong></td><td><strong>20.38</strong></td><td><strong>21.82</strong></td><td>15.88</td><td>0.74</td><td><span class="badge badge-success">+3.7 bu/ac (+2.5 to +5.0)</span> 14.4% lower RMSE</td></tr>
+          </tbody>
+        </table>
       </div>
+      <p>
+        The anomaly model's gain holds up on the new year and its interval excludes zero; the direct model's 2.3% gain does not. (On 2021, the direct model's loss to the baseline is also within noise: −1.8, interval −4.4 to +0.7.) Source: <a href="https://github.com/akarshkumar161-arch/ES335_Crop_Yield_Production/blob/main/notebooks/04_eda_uncertainty_and_errors.ipynb" target="_blank" class="inline-code">notebooks/04_eda_uncertainty_and_errors.ipynb</a>.
+      </p>
+      <figure class="fig">
+        <img src="figures/02_pred_vs_actual_2022.png" alt="Scatter plots of predicted against actual yield for 2022" loading="lazy">
+        <figcaption><strong>Figure 4.</strong> 2022 test: direct HGB predictions against actual yield (left) and the county-mean baseline (right). Both pull extreme counties toward the middle.</figcaption>
+      </figure>
+
     </section>
 
     <!-- Interactive Component 1: US County Map Explorer -->
@@ -500,7 +590,10 @@
       <span class="section-tag">Interactive Deliverable 1</span>
       <h2 class="section-heading">US County Yield &amp; Error Explorer</h2>
       <p>
-        Explore model predictions across 1,500+ US agricultural counties. Click on any county circle to inspect its exact yield, prediction error, baseline comparison, and underlying soil/weather profile.
+        Every prediction here is out-of-sample: 2021 from models trained on 2017–2020, 2022 from models trained on 2017–2021. Pick a model and a colouring, then click any county to see its yield, each model's error, how many earlier years it has, and its soil and weather.
+      </p>
+      <p class="hint-text">
+        Things to try: choose <em>2022</em>, <em>Anomaly model</em> and <em>Better or Worse Than Baseline</em>. About two-thirds of counties are green (944 of 1,515), in every region; the strongest green is in Kansas, Texas and Nebraska, where the 2022 drought pushed yields far below normal and the weather correction caught part of the drop. Switch the model to <em>Direct HGB</em> and the map turns much more mixed. Then pick <em>Prediction Error</em>, filter to Georgia or Mississippi and click the darkest counties: several have no earlier history, so every model just predicts the state average.
       </p>
 
       <div class="interactive-container">
@@ -515,11 +608,21 @@
           </div>
 
           <div class="control-item">
+            <label for="select-model">Model</label>
+            <select id="select-model" class="control-select">
+              <option value="anom" selected>Anomaly model (main result)</option>
+              <option value="full">Direct HGB (weather+geo+soil)</option>
+              <option value="base">County-mean baseline</option>
+            </select>
+          </div>
+
+          <div class="control-item">
             <label for="select-view-mode">Map Coloring</label>
             <select id="select-view-mode" class="control-select">
-              <option value="actual" selected>Actual Corn Yield (bu/acre)</option>
-              <option value="error">Prediction Error |Actual - Predicted|</option>
-              <option value="soil_imp">Soil Improvement Over Weather-Only</option>
+              <option value="error" selected>Prediction Error |Actual − Predicted|</option>
+              <option value="gain">Better or Worse Than Baseline</option>
+              <option value="actual">Actual Corn Yield (bu/acre)</option>
+              <option value="soil_imp">Soil Improvement Over Weather-Only (direct models)</option>
             </select>
           </div>
 
@@ -560,7 +663,7 @@
                   <div class="metric-pair-val" id="insp-actual">--</div>
                 </div>
                 <div class="metric-pair">
-                  <div class="metric-pair-label">Predicted Yield</div>
+                  <div class="metric-pair-label" id="insp-pred-label">Predicted Yield</div>
                   <div class="metric-pair-val" id="insp-pred">--</div>
                 </div>
                 <div class="metric-pair">
@@ -574,11 +677,23 @@
               </div>
 
               <div class="breakdown-row">
-                <span>Weather-Only Error:</span>
-                <strong id="insp-err-w">--</strong>
+                <span>Anomaly model error:</span>
+                <strong id="insp-err-anom">--</strong>
               </div>
               <div class="breakdown-row">
-                <span>Soil Improvement Gain:</span>
+                <span>Direct HGB error:</span>
+                <strong id="insp-err-full">--</strong>
+              </div>
+              <div class="breakdown-row">
+                <span>Baseline error:</span>
+                <strong id="insp-err-base">--</strong>
+              </div>
+              <div class="breakdown-row">
+                <span>County history before this year:</span>
+                <strong id="insp-history">--</strong>
+              </div>
+              <div class="breakdown-row">
+                <span>Soil Improvement Gain (direct):</span>
                 <strong id="insp-soil-imp">--</strong>
               </div>
 
@@ -600,7 +715,7 @@
                 <strong id="insp-rain">--</strong>
               </div>
               <div class="breakdown-row">
-                <span>Summer Heat Days (&gt;30°C):</span>
+                <span>Apr–Sep Heat Days (&gt;30°C):</span>
                 <strong id="insp-heat">--</strong>
               </div>
             </div>
@@ -724,6 +839,10 @@
           </div>
         </div>
       </div>
+          <figure class="fig">
+        <img src="figures/06_simulator_response_curves.png" alt="Response curves of the simulator model for each input" loading="lazy">
+        <figcaption><strong>Figure 9.</strong> What the simulator model learned: change in predicted yield as each input moves across its range with the others at their medians. These are associations across counties; for example the downward soil-carbon curve mostly reflects that high-carbon soils are in cooler northern counties.</figcaption>
+      </figure>
     </section>
 
     <!-- Section 7: Error Analysis & Residuals -->
@@ -732,7 +851,7 @@
       <h2 class="section-heading">Error Analysis &amp; Spatial Disparities</h2>
 
       <p>
-        Evaluating model errors spatially reveals critical failure modes and highlights why uniform national models often misrepresent specific agricultural micro-regions:
+        Error by state on the 2022 test year (states with 5+ counties, hardest first). The anomaly model beats the baseline in most Corn Belt states; the hardest states are in the Southeast and the dry West.
       </p>
 
       <div class="table-responsive">
@@ -743,52 +862,75 @@
               <th>Agricultural Classification</th>
               <th>Counties</th>
               <th>Mean Yield</th>
-              <th>Model RMSE</th>
+              <th>Anomaly RMSE</th>
+              <th>Direct RMSE</th>
               <th>Baseline RMSE</th>
-              <th>Relative Gain</th>
+              <th>Anomaly Gain</th>
             </tr>
           </thead>
           <tbody id="table-state-errors-body">
-            <!-- Populated dynamically by app.js -->
-            <tr>
-              <td><strong>Iowa (IA)</strong></td>
-              <td><span class="badge badge-success">Corn Belt</span></td>
-              <td>84</td>
-              <td>201.3 bu/ac</td>
-              <td>32.63</td>
-              <td>16.76</td>
-              <td><span class="badge badge-danger">-94.7%</span></td>
-            </tr>
-            <tr>
-              <td><strong>Illinois (IL)</strong></td>
-              <td><span class="badge badge-success">Corn Belt</span></td>
-              <td>79</td>
-              <td>199.6 bu/ac</td>
-              <td>25.58</td>
-              <td>16.89</td>
-              <td><span class="badge badge-danger">-51.4%</span></td>
-            </tr>
-            <tr>
-              <td><strong>Washington (WA)</strong></td>
-              <td><span class="badge badge-info">West / Pacific</span></td>
-              <td>4</td>
-              <td>224.0 bu/ac</td>
-              <td>67.37</td>
-              <td>23.35</td>
-              <td><span class="badge badge-danger">-188.5%</span></td>
-            </tr>
-            <tr>
-              <td><strong>Colorado (CO)</strong></td>
-              <td><span class="badge badge-info">West / Pacific</span></td>
-              <td>16</td>
-              <td>128.0 bu/ac</td>
-              <td>65.75</td>
-              <td>30.76</td>
-              <td><span class="badge badge-danger">-113.7%</span></td>
-            </tr>
+            <tr><td colspan="8">Loading…</td></tr>
           </tbody>
         </table>
       </div>
+
+      <h3 class="sub-heading">Representative Errors (2022 test, anomaly model)</h3>
+      <p>The ten largest errors and three typical ones (error equal to the median). Negative error = the model predicted too high.</p>
+      <div class="table-responsive">
+        <table class="data-table compact">
+          <thead><tr><th>County (FIPS)</th><th>Earlier years</th><th>Actual</th><th>Baseline</th><th>Anomaly pred.</th><th>Error</th><th>Apr–Sep rain (mm)</th><th>Heat days</th></tr></thead>
+          <tbody>
+            <tr><td>GA 13147</td><td>3</td><td>72.1</td><td>175.8</td><td>177.4</td><td>−105.3</td><td>296</td><td>83</td></tr>
+            <tr><td>MS 28059</td><td>0</td><td>65.2</td><td>169.3</td><td>169.3</td><td>−104.1</td><td>638</td><td>100</td></tr>
+            <tr><td>GA 13211</td><td>0</td><td>63.1</td><td>165.0</td><td>165.0</td><td>−101.9</td><td>471</td><td>83</td></tr>
+            <tr><td>MS 28041</td><td>0</td><td>77.4</td><td>169.3</td><td>169.3</td><td>−91.9</td><td>624</td><td>126</td></tr>
+            <tr><td>GA 13241</td><td>0</td><td>77.8</td><td>165.0</td><td>165.0</td><td>−87.2</td><td>497</td><td>7</td></tr>
+            <tr><td>TX 48099</td><td>0</td><td>35.0</td><td>114.5</td><td>114.5</td><td>−79.5</td><td>179</td><td>147</td></tr>
+            <tr><td>GA 13233</td><td>1</td><td>88.9</td><td>167.1</td><td>166.8</td><td>−77.9</td><td>423</td><td>72</td></tr>
+            <tr><td>OK 40037</td><td>1</td><td>39.1</td><td>128.9</td><td>116.3</td><td>−77.2</td><td>532</td><td>116</td></tr>
+            <tr><td>MO 29065</td><td>0</td><td>78.0</td><td>152.7</td><td>152.7</td><td>−74.7</td><td>611</td><td>60</td></tr>
+            <tr><td>AL 01079</td><td>4</td><td>96.3</td><td>179.7</td><td>170.2</td><td>−73.9</td><td>365</td><td>95</td></tr>
+            <tr class="highlight-row"><td>CO 08101 (typical)</td><td>5</td><td>198.9</td><td>185.5</td><td>187.2</td><td>+11.7</td><td>129</td><td>95</td></tr>
+            <tr class="highlight-row"><td>OH 39135 (typical)</td><td>5</td><td>178.5</td><td>188.3</td><td>190.2</td><td>−11.7</td><td>392</td><td>20</td></tr>
+            <tr class="highlight-row"><td>TN 47153 (typical)</td><td>2</td><td>155.3</td><td>145.0</td><td>143.6</td><td>+11.7</td><td>443</td><td>25</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        <strong>Where the anomaly model helps most:</strong> drought counties in 2022. In Kansas the counties averaged 107 bu/acre against a historical baseline of 131; the anomaly model predicted 116, closing more than half the gap. Texas (actual 81, baseline 114, model 104) and Nebraska (160, 183, 172) show the same pattern: the weather correction points the right way but under-shoots large shocks.
+      </p>
+      <p>
+        <strong>Where it fails:</strong> all ten largest errors are over-predictions of very low yields (35–96 bu/acre), and <strong>six of the ten counties have no earlier yield in our data</strong>, so their prediction is just the state average. Counties that appear for the first time in 2022 averaged 125 bu/acre against 154 for counties with history; they are probably marginal corn counties that USDA reports only in some years. Error falls steadily as history grows:
+      </p>
+      <div class="table-responsive">
+        <table class="data-table compact">
+          <thead><tr><th>Earlier years of data (2022 test)</th><th>Counties</th><th>Mean yield</th><th>Baseline RMSE</th><th>Anomaly RMSE</th></tr></thead>
+          <tbody>
+            <tr><td>None (state average used)</td><td>31</td><td>124.9</td><td>52.1</td><td>52.1</td></tr>
+            <tr><td>1 year</td><td>43</td><td>118.8</td><td>32.9</td><td>30.1</td></tr>
+            <tr><td>2–3 years</td><td>303</td><td>139.2</td><td>25.5</td><td>22.1</td></tr>
+            <tr><td>4–5 years</td><td>1,138</td><td>159.3</td><td>24.0</td><td>19.9</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <figure class="fig">
+        <img src="figures/09_error_by_yield_band_and_bootstrap.png" alt="Bar chart of mean error by yield band and interval plot of bootstrap results" loading="lazy">
+        <figcaption><strong>Figure 5.</strong> Left: mean error by actual-yield band in 2022. Both models over-predict the lowest-yield counties and under-predict the highest, i.e. they shrink toward typical yields; the anomaly model shrinks less. Right: 95% state-bootstrap intervals for each model's RMSE gain over the baseline; only the anomaly model's intervals exclude zero.</figcaption>
+      </figure>
+      <figure class="fig">
+        <img src="figures/03_rmse_by_state_2022.png" alt="Bar chart of 2022 RMSE by state" loading="lazy">
+        <figcaption><strong>Figure 6.</strong> 2022 RMSE by state for the direct HGB and the baseline (states with 10+ counties).</figcaption>
+      </figure>
+
+      <h3 class="sub-heading">Which Features Does the Model Use?</h3>
+      <figure class="fig">
+        <img src="figures/04_permutation_importance.png" alt="Bar chart of the 15 most important features" loading="lazy">
+        <figcaption><strong>Figure 7.</strong> Permutation importance of the direct HGB on 2021: how much RMSE rises when one column is shuffled. Latitude/longitude and mid-summer weather dominate; soil columns matter much less.</figcaption>
+      </figure>
+      <figure class="fig">
+        <img src="figures/05_ridge_coefficients.png" alt="Bar chart of Ridge coefficients" loading="lazy">
+        <figcaption><strong>Figure 8.</strong> Largest standardized Ridge coefficients (change in yield per one-standard-deviation increase, others held fixed). Neighbouring months and the two soil depths are strongly correlated, so their coefficients partly cancel; read them as groups, not one by one. These are associations, not causal effects. Table: <a href="https://github.com/akarshkumar161-arch/ES335_Crop_Yield_Production/blob/main/es335_crop/ridge_coefficients.csv" target="_blank" class="inline-code">es335_crop/ridge_coefficients.csv</a>.</figcaption>
+      </figure>
 
       <h3 class="sub-heading">Why Do Certain States Suffer High Prediction Errors?</h3>
       <div class="callout danger">
@@ -828,6 +970,17 @@
         </div>
       </div>
 
+      <h3 class="sub-heading">What Limits Our Conclusions</h3>
+      <ul class="plain-list">
+        <li><strong>One test year.</strong> The 2022 result could differ in another year; our bootstrap interval covers which counties are evaluated, not different weather years.</li>
+        <li><strong>Observed weather.</strong> We use the season's actual weather, so this is an end-of-season estimate, not a forecast (below).</li>
+        <li><strong>Counties without history</strong> fall back to the state average and produce the largest errors; the anomaly model cannot help them.</li>
+        <li><strong>No irrigation, management or elevation data.</strong> Irrigated western counties look like droughts to the model. Elevation, soil texture and cropland masking from our proposal were not added.</li>
+        <li><strong>Soil is static and coarse</strong> (5 km, county-averaged, topsoil only), so it mostly acts as another location signal.</li>
+        <li><strong>Six years, corn only.</strong> Results may not carry over to other crops or to extreme years such as 2012.</li>
+        <li><strong>Associations, not causes.</strong> Feature effects (including the negative soil-carbon effect) reflect where things occur together, not what would happen if they were changed.</li>
+      </ul>
+
       <h3 class="sub-heading">Operational vs. Historical Reanalysis</h3>
       <p>
         CropNet uses <strong>WRF-HRRR reanalysis</strong>, which represents <em>observed historical weather</em> reconstructed by numerical assimilation models. In a true real-time operational setting (e.g., forecasting July yields in early May), the model would depend on seasonal weather forecasts (NOAA GFS/ECMWF), introducing weather forecast uncertainty that is absent when using historical reanalysis.
@@ -840,7 +993,7 @@
       <ul style="margin-left: 1.5rem; color: var(--text-muted); margin-bottom: 1rem;">
         <li><strong>Commercial Nitrogen Application:</strong> Farmers apply synthetic anhydrous ammonia, urea, or manure. SoilGrids reports native organic nitrogen, not actual seasonal fertilizer rates.</li>
         <li><strong>Seed Genetics:</strong> Modern drought-tolerant hybrids (e.g., Bayer DroughtGard, Corteva Optimum AQUAmax) shift heat stress thresholds substantially.</li>
-        <li><strong>Subsurface Drainage Tiles:</strong> In poorly drained Midwest soils, underground perforated pipes drain excess spring moisture, preventing the root rot penalty our model predicts from excessive April rain.</li>
+        <li><strong>Subsurface Drainage Tiles:</strong> In poorly drained Midwest soils, underground perforated pipes drain excess spring moisture, which changes how spring rain affects yield in ways our features cannot see.</li>
       </ul>
     </section>
 
@@ -854,9 +1007,10 @@
       </p>
 
       <ol style="margin-left: 1.5rem; color: var(--text-muted); line-height: 1.8; margin-bottom: 1.5rem;">
-        <li><strong>Historical Baselines Dominate Direct Prediction:</strong> When county yield histories are available, historical averages (\(\text{RMSE} = 23.83\)) outshine direct weather models (\(\text{RMSE} = 25.61\)). Agricultural productivity possesses immense spatial persistence.</li>
-        <li><strong>Anomaly Modeling Provides Strong Gains:</strong> Reframing the task as predicting weather-driven deviations from county normals achieved the best performance: \(\text{RMSE} = 20.38\) bu/ac, a <strong>14.5% error reduction</strong> over the historical county baseline with \(R^2 = 0.71\).</li>
-        <li><strong>Soil Adds Little Once Location Is Known:</strong> Adding SoilGrids properties (SOC, nitrogen, pH) to weather+geo lowered the direct HGB's 2021 RMSE by about 1.0 bu/ac (26.59 → 25.61). It gave no gain in the anomaly setting, and in leave-states-out validation it slightly hurt (28.56 → 29.51). Because soil is constant within a county, it mostly acts as another location signal.</li>
+        <li><strong>A county's history explains most of its yield.</strong> 81% of yield variance is between counties, and the county-mean baseline (RMSE 23.83 in 2021, 25.48 in 2022) is not beaten by any direct weather+soil+location model in a way we can distinguish from noise.</li>
+        <li><strong>Weather adds real information once history is used.</strong> Predicting each year's departure from the county normal gives RMSE 20.38 on 2021 and 21.82 on the untouched 2022 test year, about 14% below the baseline in both years, with a 2022 bootstrap interval of +2.5 to +5.0 bu/acre that excludes zero.</li>
+        <li><strong>Soil adds little once location is known.</strong> It lowers the direct model's 2021 RMSE by about 1.0 bu/acre (26.59 → 25.61), gives no gain in the anomaly model, and slightly hurts in leave-states-out validation (28.56 → 29.51). Because soil is constant within a county, it mostly stands in for location.</li>
+        <li><strong>Errors concentrate where history is missing or yields collapse.</strong> The worst 2022 errors are low-yield, often newly reported counties in the Southeast, plus irrigated western counties. The models shrink extreme years toward normal.</li>
       </ol>
     </section>
 
@@ -892,7 +1046,12 @@ pip install -r requirements.txt</code></pre>
 ├── ablation_val2021.csv           # Benchmark results on 2021 validation set
 ├── settingA_anomaly_val2021.csv   # Anomaly formulation metrics
 ├── settingB_leave_states_out.csv  # Spatial GroupKFold CV results
-└── ridge_coefficients.csv         # Standardized Ridge coefficients (notebook 03)</code></pre>
+├── ridge_coefficients.csv         # Standardized Ridge coefficients (notebook 03)
+├── final_comparison_2021_2022.csv # Baseline / direct / anomaly on 2021 and 2022 (notebook 04)
+├── bootstrap_ci.csv               # State-bootstrap 95% intervals (notebook 04)
+├── representative_errors_2022.csv # Largest and typical errors (notebook 04)
+├── error_by_history_2022.csv      # Error by years of county history (notebook 04)
+└── data_quality_summary.csv       # Row counts and quality checks (notebook 04)</code></pre>
 
       <h3 class="sub-heading">3. Running the Analysis Notebooks</h3>
       <pre class="code-block"><code># Launch Jupyter
@@ -900,15 +1059,25 @@ jupyter notebook
 
 # 1. Open notebooks/01_model_ablation_and_tuning.ipynb
 #    Trains Ridge, RF, HGB across weather, geo, soil sets and tunes on 2021.
-#    Executes the single final test on 2022 (RMSE: 24.90, R2: 0.67).
+#    Scores the tuned direct HGB once on 2022 (RMSE 24.90).
 
 # 2. Open notebooks/02_anomaly_and_spatial_cv.ipynb
 #    Executes Setting A (Anomaly departure models) and Setting B (Leave-states-out CV).
 
 # 3. Open notebooks/03_figures_and_coefficients.ipynb
-#    Saves all report figures to figures/ and the Ridge coefficients table.
+#    Saves Figures 3, 4, 6, 7, 8 and the Ridge coefficients table.
+
+# 4. Open notebooks/04_eda_uncertainty_and_errors.ipynb
+#    Data plots and quality table, the anomaly model's 2022 test (RMSE 21.82),
+#    state-bootstrap intervals and the representative-error tables.
+
+# (Optional, Colab, several hours) notebooks/00_data_pipeline.ipynb rebuilds es335_crop/*.csv from the raw sources.
 
 # Notebooks run locally or on Colab; locally they read es335_crop/ automatically.</code></pre>
+
+      <p>
+        Full code, all result tables, the AI-use disclosure and citations are in the <a href="https://github.com/akarshkumar161-arch/ES335_Crop_Yield_Production" target="_blank">GitHub repository</a> and its <a href="https://github.com/akarshkumar161-arch/ES335_Crop_Yield_Production#readme" target="_blank">README</a>.
+      </p>
 
       <h3 class="sub-heading">4. Generating Web Artifacts &amp; Local Preview</h3>
       <pre class="code-block"><code># Train the website models and export docs/data/*.json
@@ -917,6 +1086,17 @@ python scripts/export_web_data.py
 # Launch local HTTP server for GitHub Pages preview
 python3 -m http.server 8000 --directory docs
 # Open http://localhost:8000 in your browser</code></pre>
+    </section>
+
+    <section class="paper-section" id="team">
+      <span class="section-tag">Team</span>
+      <h2 class="section-heading">Contributions, AI Use &amp; Sources</h2>
+      <ul class="plain-list">
+        <li><strong>Akarsh Kumar (25110015):</strong> Extracting the trained data for use outside the notebooks, and building the website (layout, county map explorer and what-if simulator). Worked jointly on the final models. </li>
+        <li><strong>Arpit Mahajan (25110054):</strong> Data processing (building the county-year table from the raw yield, weather, soil and boundary data) and the baseline models (county mean, previous-year and training-mean). Worked jointly on the final models.</li>
+        <li><strong>AI use:</strong> we used AI assistants for code review, parts of the code and website text; every number on this page was produced by code in the repository and checked by us. Full disclosure in the README.</li>
+        <li><strong>Data:</strong> CropNet (Lin et al., KDD 2024), ISRIC SoilGrids 2.0 (Poggio et al., 2021), US Census cartographic boundary files. Full citations in the README.</li>
+      </ul>
     </section>
 
   </main>

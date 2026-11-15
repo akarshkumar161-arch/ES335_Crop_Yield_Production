@@ -1,0 +1,11 @@
+,value
+USDA corn county-years 2017-2022 (before joins),8739
+rows in final table (after weather/soil/geo joins),8691
+rows lost at the weather join,48
+missing values in final table,0
+counties,1898
+counties observed in only 1 year,136
+counties observed in all 6 years,757
+"county-years with < 100 mm Apr-Sep rain (real, dry west)",70
+weather files that failed to download,4
+yield min / max (bu/acre),19.8 / 270.2

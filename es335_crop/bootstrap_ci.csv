@@ -1,0 +1,5 @@
+year,model,RMSE_baseline_minus_model,ci95_low,ci95_high,clearly_better_than_baseline,clearly_worse
+2021,direct,-1.78,-4.39,0.7,False,False
+2021,anomaly,3.45,1.42,5.35,True,False
+2022,direct,0.58,-2.13,2.98,False,False
+2022,anomaly,3.66,2.46,4.95,True,False

@@ -1,4 +1,72 @@
 {
+  "bootstrap_ci": [
+    {
+      "year": 2021,
+      "model": "direct",
+      "RMSE_baseline_minus_model": -1.78,
+      "ci95_low": -4.39,
+      "ci95_high": 0.7,
+      "clearly_better_than_baseline": false,
+      "clearly_worse": false
+    },
+    {
+      "year": 2021,
+      "model": "anomaly",
+      "RMSE_baseline_minus_model": 3.45,
+      "ci95_low": 1.42,
+      "ci95_high": 5.35,
+      "clearly_better_than_baseline": true,
+      "clearly_worse": false
+    },
+    {
+      "year": 2022,
+      "model": "direct",
+      "RMSE_baseline_minus_model": 0.58,
+      "ci95_low": -2.13,
+      "ci95_high": 2.98,
+      "clearly_better_than_baseline": false,
+      "clearly_worse": false
+    },
+    {
+      "year": 2022,
+      "model": "anomaly",
+      "RMSE_baseline_minus_model": 3.66,
+      "ci95_low": 2.46,
+      "ci95_high": 4.95,
+      "clearly_better_than_baseline": true,
+      "clearly_worse": false
+    }
+  ],
+  "error_by_history_2022": [
+    {
+      "history": "none (state mean)",
+      "n": 31,
+      "mean_yield": 124.9,
+      "rmse_baseline": 52.1,
+      "rmse_anomaly": 52.1
+    },
+    {
+      "history": "1 year",
+      "n": 43,
+      "mean_yield": 118.8,
+      "rmse_baseline": 32.9,
+      "rmse_anomaly": 30.1
+    },
+    {
+      "history": "2-3 years",
+      "n": 303,
+      "mean_yield": 139.2,
+      "rmse_baseline": 25.5,
+      "rmse_anomaly": 22.1
+    },
+    {
+      "history": "4-5 years",
+      "n": 1138,
+      "mean_yield": 159.3,
+      "rmse_baseline": 24.0,
+      "rmse_anomaly": 19.9
+    }
+  ],
   "direct_ablation_val2021": [
     {
       "features": "weather",
@@ -244,6 +312,12 @@
       "rmse": 23.83,
       "mae": 18.77,
       "r2": 0.61
+    },
+    "anomaly_model": {
+      "rmse": 20.38,
+      "mae": 15.42,
+      "r2": 0.71,
+      "gain_pct_vs_baseline": 14.5
     }
   },
   "final_test_2022": {
@@ -272,6 +346,12 @@
       "rmse": 25.48,
       "mae": 18.97,
       "r2": 0.65
+    },
+    "anomaly_model": {
+      "rmse": 21.82,
+      "mae": 15.88,
+      "r2": 0.74,
+      "gain_pct_vs_baseline": 14.4
     }
   }
 }

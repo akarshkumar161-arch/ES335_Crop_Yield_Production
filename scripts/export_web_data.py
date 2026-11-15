@@ -9,8 +9,10 @@ and evaluated on years it never saw. Nothing is hand-tuned or blended with the t
   * counties_summary.json  - per county, real out-of-sample predictions:
         2021: models trained on 2017-2020 (validation year)
         2022: models trained on 2017-2021 (held-out test year)
-        full model    = HistGradientBoosting on weather + geo + soil
-        weather-only  = HistGradientBoosting on weather
+        anomaly model = county mean + HGB prediction of the departure from it (Setting A, notebook 02);
+                        the approach chosen on 2021 and the main result
+        full model    = direct HistGradientBoosting on weather + geo + soil
+        weather-only  = direct HistGradientBoosting on weather
         baseline      = county mean of the training years (fallback: state mean, then overall mean)
   * state_errors.json      - per-state RMSE of the full model vs the baseline
   * simulator_params.json  - a Ridge model (6 inputs + their squares) exported as plain numbers
@@ -101,6 +103,34 @@ def county_mean_baseline(train, target):
 
 
 # --------------------------------------------------------------------------- 1. map data
+ANOMALY_PARAMS = dict(max_iter=200, learning_rate=0.05, max_depth=4, min_samples_leaf=40)   # notebook 02, Setting A
+
+
+def anomaly_predict(train, test, weather, geo, soil):
+    """Setting A: county mean + HGB prediction of this year's departure from it.
+
+    Training targets use leave-one-year-out county means (a row's own year is excluded), so the
+    model never sees a mean that contains the value it is predicting. Same code as notebooks 02 and 04.
+    """
+    cols = ["Yield"] + weather
+    x = train[cols]
+    sums = train.groupby("FIPS")[cols].transform("sum")
+    cnt = train.groupby("FIPS")[cols].transform("count")
+    loo = (sums - x.fillna(0)) / (cnt - x.notna().astype(int))
+    keep = train.groupby("FIPS")["Yield"].transform("count") >= 2
+    tr, loo = train[keep], loo[keep]
+    X_tr = (tr[weather] - loo[weather]).join(tr[geo + soil])
+    y_tr = tr["Yield"] - loo["Yield"]
+
+    cm = train.groupby("FIPS")[cols].mean().reindex(test["FIPS"])
+    known = test["FIPS"].isin(train["FIPS"]).values
+    X_te = pd.DataFrame(test[weather].values - cm[weather].values, columns=weather, index=test.index).join(test[geo + soil])
+    model = HistGradientBoostingRegressor(**ANOMALY_PARAMS, random_state=SEED).fit(X_tr, y_tr)
+    corr = pd.Series(model.predict(X_te), index=test.index)
+    corr[~known] = 0.0                      # no county history: fall back to the baseline
+    return corr
+
+
 def predict_year(df, year, hgb_params, weather, geo, soil):
     train = df[df["Year"].between(2017, year - 1)]
     test = df[df["Year"] == year].copy()
@@ -112,6 +142,8 @@ def predict_year(df, year, hgb_params, weather, geo, soil):
     test["pred_full"] = m_full.predict(test[full_cols])
     test["pred_w"] = m_w.predict(test[weather])
     test["baseline"] = county_mean_baseline(train, test)
+    test["pred_anom"] = test["baseline"] + anomaly_predict(train, test, weather, geo, soil)
+    test["history_years"] = test["FIPS"].map(train.groupby("FIPS").size()).fillna(0).astype(int)
 
     metrics = {
         "train_years": f"2017-{year - 1}",
@@ -119,8 +151,10 @@ def predict_year(df, year, hgb_params, weather, geo, soil):
         "full_model": rounded(scores(test["Yield"], test["pred_full"])),
         "weather_only": rounded(scores(test["Yield"], test["pred_w"])),
         "county_mean_baseline": rounded(scores(test["Yield"], test["baseline"])),
+        "anomaly_model": rounded(scores(test["Yield"], test["pred_anom"])),
     }
     b = metrics["county_mean_baseline"]["rmse"]
+    metrics["anomaly_model"]["gain_pct_vs_baseline"] = round((b - metrics["anomaly_model"]["rmse"]) / b * 100, 1)
     metrics["full_model"]["gain_pct_vs_baseline"] = round((b - metrics["full_model"]["rmse"]) / b * 100, 1)
     metrics["weather_only"]["gain_pct_vs_baseline"] = round((b - metrics["weather_only"]["rmse"]) / b * 100, 1)
     return test, metrics
@@ -133,6 +167,8 @@ def county_records(test):
         name, abbr = STATE_NAMES.get(st, (f"State {st}", st))
         err_full = r["Yield"] - r["pred_full"]     # sign convention: actual - predicted
         err_w = r["Yield"] - r["pred_w"]
+        err_anom = r["Yield"] - r["pred_anom"]
+        err_base = r["Yield"] - r["baseline"]
         out.append({
             "fips": r["FIPS"], "state": abbr, "state_name": name,
             "lat": round(float(r["lat"]), 3), "lon": round(float(r["lon"]), 3),
@@ -142,7 +178,12 @@ def county_records(test):
             "pred_w": round(float(r["pred_w"]), 1),
             "err_full": round(float(err_full), 1),
             "err_w": round(float(err_w), 1),
-            "err_base": round(float(r["Yield"] - r["baseline"]), 1),
+            "err_base": round(float(err_base), 1),
+            "pred_anom": round(float(r["pred_anom"]), 1),
+            "err_anom": round(float(err_anom), 1),
+            # > 0 means the anomaly model's absolute error is smaller than the baseline's
+            "anom_gain": round(float(abs(err_base) - abs(err_anom)), 1),
+            "history_years": int(r["history_years"]),
             # > 0 means adding geo + soil reduced this county's absolute error
             "soil_improvement": round(float(abs(err_w) - abs(err_full)), 1),
             "precip": round(float(r["precip_season"]), 1),
@@ -162,6 +203,7 @@ def state_errors(test, year):
         s_full = scores(g["Yield"], g["pred_full"]) if len(g) > 1 else {
             "rmse": float(abs(g["Yield"] - g["pred_full"]).iloc[0]), "mae": float(abs(g["Yield"] - g["pred_full"]).iloc[0])}
         rmse_base = float(np.sqrt(((g["Yield"] - g["baseline"]) ** 2).mean()))
+        rmse_anom = float(np.sqrt(((g["Yield"] - g["pred_anom"]) ** 2).mean()))
         corn_belt = st in CORN_BELT_STATES
         rows.append({
             "year": year, "state": abbr, "state_code": st, "state_name": name,
@@ -171,6 +213,8 @@ def state_errors(test, year):
             "rmse_base": round(rmse_base, 2),
             "mae_full": round(s_full["mae"], 2),
             "rmse_gain_pct": round((rmse_base - s_full["rmse"]) / rmse_base * 100, 1) if rmse_base > 0 else 0.0,
+            "rmse_anom": round(rmse_anom, 2),
+            "rmse_gain_pct_anom": round((rmse_base - rmse_anom) / rmse_base * 100, 1) if rmse_base > 0 else 0.0,
             "is_corn_belt": corn_belt,
             "region": "Corn Belt" if corn_belt else ("West / Pacific" if st in WEST_STATES else "General Plains / East"),
         })
@@ -314,14 +358,14 @@ def main():
     test21, m21 = predict_year(df, 2021, HGB_VAL_PARAMS, weather, geo, soil)
     test22, m22 = predict_year(df, 2022, HGB_TEST_PARAMS, weather, geo, soil)
     for y, m in [(2021, m21), (2022, m22)]:
-        print(f"{y}: full {m['full_model']} | weather-only {m['weather_only']} | baseline {m['county_mean_baseline']}")
+        print(f"{y}: anomaly {m['anomaly_model']} | direct {m['full_model']} | baseline {m['county_mean_baseline']}")
 
     counties = {"2021": county_records(test21), "2022": county_records(test22)}
     with open(os.path.join(OUT_DIR, "counties_summary.json"), "w", encoding="utf-8") as f:
         json.dump(counties, f)
 
     st = state_errors(test21, 2021) + state_errors(test22, 2022)
-    st.sort(key=lambda s: (s["year"], -s["rmse_full"]))
+    st.sort(key=lambda s: (s["year"], -s["rmse_anom"]))
     with open(os.path.join(OUT_DIR, "state_errors.json"), "w", encoding="utf-8") as f:
         json.dump(st, f, indent=2)
 
@@ -341,7 +385,13 @@ def main():
     v = val21.merge(prev[["FIPS", "Year", "prev"]], on=["FIPS", "Year"], how="left")
     v_cm = county_mean_baseline(train20, v)
 
+    def read_csv_records(name):
+        p = os.path.join(DATA_DIR, name)
+        return pd.read_csv(p, dtype={"FIPS": str}).to_dict("records") if os.path.exists(p) else None
+
     metrics = {
+        "bootstrap_ci": read_csv_records("bootstrap_ci.csv"),                      # notebook 04
+        "error_by_history_2022": read_csv_records("error_by_history_2022.csv"),    # notebook 04
         "direct_ablation_val2021": read_result_csv("ablation_val2021.csv", "RMSE_gain_vs_county_mean_%"),
         "settingA_anomaly_val2021": read_result_csv("settingA_anomaly_val2021.csv", "RMSE_gain_vs_baseline_%"),
         "settingB_leave_states_out": read_result_csv("settingB_leave_states_out.csv", "RMSE_gain_vs_baseline_%"),
@@ -357,6 +407,18 @@ def main():
         json.dump(metrics, f, indent=2)
 
     print(f"Wrote counties_summary.json, state_errors.json, simulator_params.json, ablation_metrics.json to {OUT_DIR}")
+
+    # GitHub Pages serves only docs/, so copy the report figures there for the website
+    import shutil
+    fig_src = os.path.join(BASE_DIR, "figures")
+    fig_dst = os.path.join(os.path.dirname(OUT_DIR), "figures")
+    if os.path.isdir(fig_src):
+        os.makedirs(fig_dst, exist_ok=True)
+        n = 0
+        for f in sorted(os.listdir(fig_src)):
+            if f.endswith(".png"):
+                shutil.copy2(os.path.join(fig_src, f), os.path.join(fig_dst, f)); n += 1
+        print(f"Copied {n} figures to {fig_dst}")
 
 
 if __name__ == "__main__":
